@@ -1,0 +1,1 @@
+python deepfake_preprocess.py --dataset FakeAVCeleb --metadata /path/to/FakeAVCeleb_metadata.csv --data_path /path/to/FakeAVCeleb_root --save_path /path/to/save/output_videos_and_audio --category all \
