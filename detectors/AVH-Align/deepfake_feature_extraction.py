@@ -26,7 +26,7 @@ for path in (AVH_HUBERT_ROOT, AVH_HUBERT_ROOT / "avhubert", AVH_FAIRSEQ_ROOT):
         sys.path.insert(0, path_str)
 
 from avhubert import hubert_pretraining, hubert, hubert_asr
-import avhubert.utils as avhubert_utils
+import av_hubert.avhubert.utils as avhubert_utils
 from fairseq import checkpoint_utils
 
 FPS = 25
