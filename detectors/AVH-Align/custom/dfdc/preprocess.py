@@ -136,6 +136,56 @@ def _center_crop_frames(frames, crop_height, crop_width):
 	return frames[:, y_start : y_start + crop_height, x_start : x_start + crop_width]
 
 
+def _fallback_mouth_crop(frames, crop_height=96, crop_width=96):
+	if frames is None or len(frames) == 0:
+		return None
+
+	import cv2
+
+	gray_frames = []
+	for frame in frames:
+		gray_frames.append(cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY))
+
+	face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+	prev_box = None
+	rois = []
+
+	for gray, frame in zip(gray_frames, frames):
+		faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(48, 48))
+		if len(faces) > 0:
+			x, y, w, h = faces[0]
+			prev_box = (x, y, w, h)
+		elif prev_box is not None:
+			x, y, w, h = prev_box
+		else:
+			rois.append(None)
+			continue
+
+		mouth_y = y + int(h * 0.55)
+		mouth_h = int(h * 0.40)
+		mouth_x = x + int(w * 0.10)
+		mouth_w = int(w * 0.80)
+
+		mouth_y = max(0, min(mouth_y, frame.shape[0] - 1))
+		mouth_x = max(0, min(mouth_x, frame.shape[1] - 1))
+		mouth_h = max(1, min(mouth_h, frame.shape[0] - mouth_y))
+		mouth_w = max(1, min(mouth_w, frame.shape[1] - mouth_x))
+
+		crop = frame[mouth_y : mouth_y + mouth_h, mouth_x : mouth_x + mouth_w]
+		crop = cv2.resize(crop, (crop_width, crop_height), interpolation=cv2.INTER_AREA)
+		rois.append(crop)
+
+	if not rois or all(r is None for r in rois):
+		return None
+
+	valid = [r for r in rois if r is not None]
+	if valid:
+		last = valid[-1]
+		rois = [r if r is not None else last for r in rois]
+
+	return np.stack(rois, axis=0)
+
+
 def _resolve_ffmpeg_path(explicit_path=None):
 	if explicit_path:
 		return explicit_path
@@ -233,7 +283,8 @@ def _preprocess_video(
 	import skvideo.io
 
 	roi_path = os.path.join(output_video_dir, _replace_ext(video_filename, "_roi.mp4"))
-	if os.path.exists(roi_path):
+	audio_fn = os.path.join(output_video_dir, _replace_ext(video_filename, ".wav"))
+	if os.path.exists(roi_path) and os.path.exists(audio_fn):
 		return True
 
 	_ensure_dir(output_video_dir)
@@ -272,22 +323,31 @@ def _preprocess_video(
 
 	try:
 		if preprocessed_landmarks is None:
-			raise ValueError("No valid landmarks to crop")
-		rois = crop_patch(
-			input_path,
-			preprocessed_landmarks,
-			mean_face_landmarks,
-			STABLE_PNTS_IDS,
-			STD_SIZE,
-			window_margin=12,
-			start_idx=48,
-			stop_idx=68,
-			crop_height=96,
-			crop_width=96,
-		)
+			rois = _fallback_mouth_crop(frames)
+			if rois is None:
+				raise ValueError("No valid landmarks to crop")
+			print(f"[WARN] Fallback mouth crop used for {input_path}")
+		else:
+			rois = crop_patch(
+				input_path,
+				preprocessed_landmarks,
+				mean_face_landmarks,
+				STABLE_PNTS_IDS,
+				STD_SIZE,
+				window_margin=12,
+				start_idx=48,
+				stop_idx=68,
+				crop_height=96,
+				crop_width=96,
+			)
+			if rois is None or len(rois) == 0:
+				rois = _fallback_mouth_crop(frames)
+				if rois is None:
+					raise ValueError("No valid mouth crops from crop_patch")
+				print(f"[WARN] Fallback mouth crop used for {input_path}")
 	except Exception as exc:
 		print(f"[ERROR] crop_patch failed for {input_path}: {exc}")
-		print(f"Failed to preprocess video: {input_path}; using center crop")
+		print(f"Failed to preprocess video: {input_path}; skipping")
 		_append_failure_log(
 			failure_log,
 			input_path,
@@ -295,10 +355,8 @@ def _preprocess_video(
 			error=repr(exc),
 			extra=f"missing_landmarks={missing_landmarks}/{len(landmarks)}",
 		)
-		rois = _center_crop_frames(frames, 96, 96)
-		rois = rois[..., ::-1] if rois is not None else frames[..., ::-1]
+		return False
 
-	audio_fn = os.path.join(output_video_dir, _replace_ext(video_filename, ".wav"))
 	write_video_ffmpeg(rois, roi_path, ffmpeg_path)
 
 	import subprocess
@@ -318,6 +376,29 @@ def _preprocess_video(
 		],
 		check=False,
 	)
+	if not os.path.exists(audio_fn):
+		duration_sec = max(len(frames) / 25.0, 0.04)
+		print(f"[WARN] Audio missing for {input_path}; generating silence")
+		subprocess.run(
+			[
+				ffmpeg_path,
+				"-f",
+				"lavfi",
+				"-i",
+				"anullsrc=r=16000:cl=mono",
+				"-t",
+				f"{duration_sec:.3f}",
+				"-q:a",
+				"9",
+				"-acodec",
+				"pcm_s16le",
+				"-y",
+				audio_fn,
+				"-loglevel",
+				"quiet",
+			],
+			check=False,
+		)
 	return True
 
 
@@ -628,15 +709,18 @@ def _run_dataset(dataset_name, items, dataset_root, args, model, transform):
 		args.max_workers,
 	)
 	_extract_features(items, preproc_root, feature_root, model, transform, args.trimmed)
-	metrics, threshold, total_count = _evaluate(
-		items,
-		feature_root,
-		args.checkpoint_path,
-		dataset_name,
-		args.threshold_strategy,
-		args.threshold,
-	)
-	_append_results(args.results_file, dataset_name, metrics, threshold, total_count, args.threshold_strategy)
+	try:
+		metrics, threshold, total_count = _evaluate(
+			items,
+			feature_root,
+			args.checkpoint_path,
+			dataset_name,
+			args.threshold_strategy,
+			args.threshold,
+		)
+		_append_results(args.results_file, dataset_name, metrics, threshold, total_count, args.threshold_strategy)
+	except RuntimeError as exc:
+		print(f"[WARN] Skipping evaluation for {dataset_name}: {exc}")
 
 
 def main():

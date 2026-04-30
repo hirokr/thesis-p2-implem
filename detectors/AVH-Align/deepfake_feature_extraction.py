@@ -89,7 +89,6 @@ def extract_features(model, video_path, audio_path, transform, trimmed):
     audio = load_audio(audio_path, silence_duration=audio_silence)[None, :, :].transpose(1, 2).cuda()
 
     skip_frames = int(audio_silence * FPS) + 1 if audio_silence > 0 else 0
-    print(trimmed, skip_frames)
     frames = frames[:, :, skip_frames:]
 
     min_len = min(frames.shape[2], audio.shape[-1])
