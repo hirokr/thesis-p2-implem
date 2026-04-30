@@ -62,8 +62,8 @@ np.float = np.float64
 np.int = np.int_
 
 # Defaults from AVH-Align preprocessing
-DEFAULT_FACE_PREDICTOR_PATH = "content/data/misc/shape_predictor_68_face_landmarks.dat"
-DEFAULT_MEAN_FACE_PATH = "content/data/misc/20words_mean_face.npy"
+DEFAULT_FACE_PREDICTOR_PATH = "av_hubert/avhubert/content/data/misc/shape_predictor_68_face_landmarks.dat"
+DEFAULT_MEAN_FACE_PATH = "av_hubert/avhubert/content/data/misc/20words_mean_face.npy"
 STD_SIZE = (256, 256)
 STABLE_PNTS_IDS = [33, 36, 39, 42, 45]
 
@@ -116,7 +116,7 @@ def _resolve_ffmpeg_path(explicit_path=None):
 	return shutil.which("ffmpeg") or "ffmpeg"
 
 
-def _validate_inputs(args, dataset_map):
+def _collect_missing_inputs(args, dataset_map):
 	missing = []
 	if not args.ffmpeg_path:
 		missing.append("ffmpeg path is empty.")
@@ -134,12 +134,49 @@ def _validate_inputs(args, dataset_map):
 		missing.append(f"fusion checkpoint not found: {args.checkpoint_path}")
 	if not os.path.exists(args.avhubert_ckpt):
 		missing.append(f"AVHubert checkpoint not found: {args.avhubert_ckpt}")
-	if missing:
-		raise FileNotFoundError("\n".join(missing))
-
 	for name, path in dataset_map.items():
 		if not os.path.exists(path):
 			print(f"[WARN] Metadata not found for '{name}': {path}")
+	return missing
+
+
+def _validate_inputs(args, dataset_map):
+	missing = _collect_missing_inputs(args, dataset_map)
+	if missing:
+		raise FileNotFoundError("\n".join(missing))
+
+
+def _download_file(url, output_path):
+	import urllib.request
+
+	_ensure_dir(os.path.dirname(output_path))
+	urllib.request.urlretrieve(url, output_path)
+
+
+def _maybe_download_assets(face_predictor_path, mean_face_path, auto_download):
+	if not auto_download:
+		return
+
+	predictor_url = "http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2"
+	mean_face_url = "https://github.com/mpc001/Lipreading_using_Temporal_Convolutional_Networks/raw/master/preprocessing/20words_mean_face.npy"
+
+	if face_predictor_path and not os.path.exists(face_predictor_path):
+		import bz2
+		import tempfile
+
+		_ensure_dir(os.path.dirname(face_predictor_path))
+		with tempfile.NamedTemporaryFile(delete=False, suffix=".bz2") as temp_handle:
+			bz2_path = temp_handle.name
+		_download_file(predictor_url, bz2_path)
+		with bz2.open(bz2_path, "rb") as source, open(face_predictor_path, "wb") as dest:
+			shutil.copyfileobj(source, dest)
+		try:
+			os.remove(bz2_path)
+		except OSError:
+			pass
+
+	if mean_face_path and not os.path.exists(mean_face_path):
+		_download_file(mean_face_url, mean_face_path)
 
 
 def _detect_landmark(image, detector, predictor):
@@ -532,7 +569,11 @@ def main():
 	parser.add_argument("--preprocessed_root", default=r"C:\t309\results\avh_aligned\preprocessed", help="Output folder for preprocessed ROI/audio")
 	parser.add_argument("--features_root", default=r"C:\t309\results\avh_aligned\features", help="Output folder for feature files")
 	parser.add_argument("--checkpoint_path", default="checkpoints/AVH-Align_AV1M.pt", help="Fusion model checkpoint")
-	parser.add_argument("--avhubert_ckpt", default="self_large_vox_433h.pt", help="AVHubert checkpoint path")
+	parser.add_argument(
+		"--avhubert_ckpt",
+		default="av_hubert/avhubert/self_large_vox_433h.pt",
+		help="AVHubert checkpoint path",
+	)
 	parser.add_argument("--face_predictor_path", default=DEFAULT_FACE_PREDICTOR_PATH, help="Dlib face predictor")
 	parser.add_argument("--mean_face_path", default=DEFAULT_MEAN_FACE_PATH, help="Mean face landmarks")
 	parser.add_argument("--ffmpeg_path", default=None, help="Explicit ffmpeg path")
@@ -540,9 +581,13 @@ def main():
 	parser.add_argument("--trimmed", action="store_true", help="Trim audio to starting silence")
 	parser.add_argument("--threshold_strategy", choices=["fixed", "youden", "f1"], default="f1", help="Threshold strategy")
 	parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for fixed strategy")
+	parser.add_argument("--auto_download_assets", action="store_true", help="Download missing landmark/mean-face assets")
+	parser.add_argument("--dry_run", action="store_true", help="Validate inputs and exit without processing")
 	args = parser.parse_args()
 
 	args.ffmpeg_path = _resolve_ffmpeg_path(args.ffmpeg_path)
+	if args.ffmpeg_path and (os.path.sep in args.ffmpeg_path or "/" in args.ffmpeg_path):
+		args.ffmpeg_path = _resolve_path(args.ffmpeg_path, PROJECT_ROOT)
 	args.base_dataset_folder = _resolve_path(args.base_dataset_folder, PROJECT_ROOT)
 	args.results_file = _resolve_path(args.results_file, PROJECT_ROOT)
 	args.dfdc_root = _resolve_path(args.dfdc_root, PROJECT_ROOT)
@@ -553,6 +598,8 @@ def main():
 	args.face_predictor_path = _resolve_path(args.face_predictor_path, PROJECT_ROOT)
 	args.mean_face_path = _resolve_path(args.mean_face_path, PROJECT_ROOT)
 
+	_maybe_download_assets(args.face_predictor_path, args.mean_face_path, args.auto_download_assets)
+
 	dataset_map = {
 		"av1": os.path.join(args.base_dataset_folder, "av1.metadata.json"),
 		"dfdc": os.path.join(args.base_dataset_folder, "dfdc.metadata.json"),
@@ -561,9 +608,21 @@ def main():
 		"lavdf": os.path.join(args.base_dataset_folder, "lavdf.metadata.json"),
 	}
 
-	_validate_inputs(args, dataset_map)
-
 	selected = [name.strip() for name in args.datasets.split(",") if name.strip()]
+
+	missing = _collect_missing_inputs(args, dataset_map)
+	if args.dry_run:
+		if missing:
+			print("[DRY RUN] Missing required files:")
+			for entry in missing:
+				print(f"  - {entry}")
+		else:
+			print("[DRY RUN] All required files found.")
+		print(f"[DRY RUN] Selected datasets: {', '.join(selected)}")
+		return
+
+	if missing:
+		raise FileNotFoundError("\n".join(missing))
 
 	model, task = feature_extraction.load_model(args.avhubert_ckpt)
 	transform = feature_extraction.load_transforms(task)
