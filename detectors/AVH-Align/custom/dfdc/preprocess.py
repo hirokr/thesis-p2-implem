@@ -283,8 +283,7 @@ def _preprocess_video(
 	import skvideo.io
 
 	roi_path = os.path.join(output_video_dir, _replace_ext(video_filename, "_roi.mp4"))
-	audio_fn = os.path.join(output_video_dir, _replace_ext(video_filename, ".wav"))
-	if os.path.exists(roi_path) and os.path.exists(audio_fn):
+	if os.path.exists(roi_path):
 		return True
 
 	_ensure_dir(output_video_dir)
@@ -357,6 +356,7 @@ def _preprocess_video(
 		)
 		return False
 
+	audio_fn = os.path.join(output_video_dir, _replace_ext(video_filename, ".wav"))
 	write_video_ffmpeg(rois, roi_path, ffmpeg_path)
 
 	import subprocess
@@ -591,8 +591,9 @@ def _preprocess_items(items, output_root, face_predictor_path, mean_face_path, f
 					ffmpeg_path,
 					failure_log,
 				)
-				if not result:
-					print(f"[WARN] Failed to preprocess: {item['video_path']}")
+				if result:
+						print(f"[DONE] Preprocessed: {item['video_path']}")
+	
 			except Exception as exc:
 				print(f"[ERROR] Exception while preprocessing {item['video_path']}: {exc}")
 		return
@@ -622,8 +623,10 @@ def _preprocess_items(items, output_root, face_predictor_path, mean_face_path, f
 			video_path = futures[future]
 			try:
 				result = future.result()
-				if not result:
-					print(f"[WARN] Failed to preprocess: {video_path}")
+				if result:
+						print(f"[DONE] Preprocessed: {video_path}")
+				else:
+						print(f"[WARN] Failed to preprocess: {video_path}")
 			except Exception as exc:
 				print(f"[ERROR] Exception while preprocessing {video_path}: {exc}")
 
@@ -657,6 +660,7 @@ def _extract_features(items, preproc_root, feature_root, model, transform, trimm
 		save_path = os.path.join(feature_root, _replace_ext(rel_path, ".npz"))
 		_ensure_dir(os.path.dirname(save_path))
 		np.savez(save_path, **save_dict)
+		print(f"[DONE] Features extracted: {item['video_path']}")
 
 
 def _evaluate(items, feature_root, checkpoint_path, dataset_name, threshold_strategy, threshold_value):
@@ -684,6 +688,7 @@ def _evaluate(items, feature_root, checkpoint_path, dataset_name, threshold_stra
 		score = eval_runner.process_video(data, fusion_model, device)
 		outputs.append(score)
 		ground_truths.append(item["label"])
+		print(f"[DONE] Evaluated: {item['video_path']} | Score: {score:.4f}")
 
 	outcdputs = np.array(outputs, dtype=np.float64)
 	ground_truths = np.array(ground_truths, dtype=np.int32)
