@@ -2,6 +2,8 @@
 
 import argparse
 import os
+import sys
+from pathlib import Path
 
 import librosa
 import csv
@@ -14,6 +16,14 @@ from tqdm import tqdm
 # Fix deprecation in numpy
 np.float = np.float64
 np.int = np.int_
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+AVH_HUBERT_ROOT = PROJECT_ROOT / "av_hubert"
+AVH_FAIRSEQ_ROOT = AVH_HUBERT_ROOT / "fairseq"
+for path in (AVH_HUBERT_ROOT / "avhubert", AVH_FAIRSEQ_ROOT):
+    path_str = str(path)
+    if path_str not in sys.path:
+        sys.path.insert(0, path_str)
 
 import hubert_pretraining, hubert, hubert_asr
 import utils as avhubert_utils

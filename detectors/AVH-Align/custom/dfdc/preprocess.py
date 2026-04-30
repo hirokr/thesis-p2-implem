@@ -2,6 +2,8 @@ import argparse
 import json
 import os
 import shutil
+import sys
+from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -17,7 +19,36 @@ from sklearn.metrics import (
 	roc_curve,
 )
 
-from ...av_hubert.avhubert.preparation.align_mouth import landmarks_interpolate, crop_patch, write_video_ffmpeg
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+AVH_HUBERT_ROOT = PROJECT_ROOT / "av_hubert"
+for path in (AVH_HUBERT_ROOT / "avhubert", AVH_HUBERT_ROOT / "fairseq", PROJECT_ROOT):
+	path_str = str(path)
+	if path_str not in sys.path:
+		sys.path.insert(0, path_str)
+
+try:
+	from ...av_hubert.avhubert.preparation.align_mouth import (
+		landmarks_interpolate,
+		crop_patch,
+		write_video_ffmpeg,
+	)
+except Exception:
+	try:
+		from avhubert.preparation.align_mouth import (
+			landmarks_interpolate,
+			crop_patch,
+			write_video_ffmpeg,
+		)
+	except Exception:
+		import importlib.util
+
+		align_mouth_path = AVH_HUBERT_ROOT / "avhubert" / "preparation" / "align_mouth.py"
+		spec = importlib.util.spec_from_file_location("avh_align_mouth", align_mouth_path)
+		module = importlib.util.module_from_spec(spec)
+		spec.loader.exec_module(module)
+		landmarks_interpolate = module.landmarks_interpolate
+		crop_patch = module.crop_patch
+		write_video_ffmpeg = module.write_video_ffmpeg
 
 import deepfake_feature_extraction as feature_extraction
 import eval as eval_runner
@@ -65,10 +96,50 @@ def _ensure_dir(path):
 	os.makedirs(path, exist_ok=True)
 
 
+def _resolve_path(path_value, base_dir):
+	if not path_value:
+		return path_value
+	path_value = os.path.expanduser(path_value)
+	if os.path.isabs(path_value):
+		return path_value
+	return os.path.abspath(os.path.join(base_dir, path_value))
+
+
+def _replace_ext(path_value, new_ext):
+	root, _ = os.path.splitext(path_value)
+	return root + new_ext
+
+
 def _resolve_ffmpeg_path(explicit_path=None):
 	if explicit_path:
 		return explicit_path
 	return shutil.which("ffmpeg") or "ffmpeg"
+
+
+def _validate_inputs(args, dataset_map):
+	missing = []
+	if not args.ffmpeg_path:
+		missing.append("ffmpeg path is empty.")
+	elif os.path.isabs(args.ffmpeg_path):
+		if not os.path.exists(args.ffmpeg_path):
+			missing.append(f"ffmpeg not found at '{args.ffmpeg_path}'.")
+	else:
+		if not shutil.which(args.ffmpeg_path):
+			missing.append(f"ffmpeg not found on PATH as '{args.ffmpeg_path}'.")
+	if not os.path.exists(args.face_predictor_path):
+		missing.append(f"face predictor not found: {args.face_predictor_path}")
+	if not os.path.exists(args.mean_face_path):
+		missing.append(f"mean face landmarks not found: {args.mean_face_path}")
+	if not os.path.exists(args.checkpoint_path):
+		missing.append(f"fusion checkpoint not found: {args.checkpoint_path}")
+	if not os.path.exists(args.avhubert_ckpt):
+		missing.append(f"AVHubert checkpoint not found: {args.avhubert_ckpt}")
+	if missing:
+		raise FileNotFoundError("\n".join(missing))
+
+	for name, path in dataset_map.items():
+		if not os.path.exists(path):
+			print(f"[WARN] Metadata not found for '{name}': {path}")
 
 
 def _detect_landmark(image, detector, predictor):
@@ -97,7 +168,7 @@ def _preprocess_video(
 	import dlib
 	import skvideo.io
 
-	roi_path = os.path.join(output_video_dir, video_filename[:-4] + "_roi.mp4")
+	roi_path = os.path.join(output_video_dir, _replace_ext(video_filename, "_roi.mp4"))
 	if os.path.exists(roi_path):
 		return True
 
@@ -135,7 +206,7 @@ def _preprocess_video(
 		print(f"Failed to preprocess video: {input_path}; passing whole video")
 		rois = frames[..., ::-1]
 
-	audio_fn = os.path.join(output_video_dir, video_filename[:-4] + ".wav")
+	audio_fn = os.path.join(output_video_dir, _replace_ext(video_filename, ".wav"))
 	write_video_ffmpeg(rois, roi_path, ffmpeg_path)
 
 	import subprocess
@@ -246,6 +317,8 @@ def _load_dfdc(metadata_path, dataset_root, split_filter=None):
 
 
 def _select_threshold(scores, labels, strategy, fixed_threshold):
+	if len(np.unique(labels)) < 2:
+		return fixed_threshold
 	if strategy == "fixed":
 		return fixed_threshold
 	fpr, tpr, thresholds = roc_curve(labels, scores)
@@ -272,15 +345,25 @@ def _compute_metrics(scores, labels, threshold):
 	precision = precision_score(labels, preds, zero_division=0)
 	recall = recall_score(labels, preds, zero_division=0)
 	f1 = f1_score(labels, preds, zero_division=0)
-	roc_auc = roc_auc_score(labels, scores)
-	pr_auc = average_precision_score(labels, scores)
+	roc_auc = float("nan")
+	pr_auc = float("nan")
+	eer = float("nan")
+	fpr_at_threshold = float("nan")
 
-	fpr, tpr, thresholds = roc_curve(labels, scores)
-	fnr = 1 - tpr
-	eer_index = int(np.nanargmin(np.abs(fnr - fpr)))
-	eer = float((fpr[eer_index] + fnr[eer_index]) / 2)
-
-	fpr_at_threshold = float(np.interp(threshold, thresholds[::-1], fpr[::-1]))
+	if len(np.unique(labels)) >= 2:
+		try:
+			roc_auc = roc_auc_score(labels, scores)
+		except ValueError:
+			roc_auc = float("nan")
+		try:
+			pr_auc = average_precision_score(labels, scores)
+		except ValueError:
+			pr_auc = float("nan")
+		fpr, tpr, thresholds = roc_curve(labels, scores)
+		fnr = 1 - tpr
+		eer_index = int(np.nanargmin(np.abs(fnr - fpr)))
+		eer = float((fpr[eer_index] + fnr[eer_index]) / 2)
+		fpr_at_threshold = float(np.interp(threshold, thresholds[::-1], fpr[::-1]))
 
 	return {
 		"Accuracy": accuracy,
@@ -374,23 +457,29 @@ def _extract_features(items, preproc_root, feature_root, model, transform, trimm
 			"audio": feature_audio,
 			"multimodal": feature_multimodal,
 		}
-		save_path = os.path.join(feature_root, rel_path.replace(".mp4", ".npz"))
+		save_path = os.path.join(feature_root, _replace_ext(rel_path, ".npz"))
 		_ensure_dir(os.path.dirname(save_path))
 		np.savez(save_path, **save_dict)
 
 
 def _evaluate(items, feature_root, checkpoint_path, dataset_name, threshold_strategy, threshold_value):
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	fusion_model_weights = torch.load(checkpoint_path, weights_only=False)
+	try:
+		fusion_model_weights = torch.load(checkpoint_path, map_location=device, weights_only=False)
+	except TypeError:
+		fusion_model_weights = torch.load(checkpoint_path, map_location=device)
 
 	fusion_model = eval_runner.FusionModel().to(device)
-	fusion_model.load_state_dict(fusion_model_weights["state_dict"])
+	state_dict = fusion_model_weights.get("state_dict") if isinstance(fusion_model_weights, dict) else None
+	if state_dict is None:
+		state_dict = fusion_model_weights
+	fusion_model.load_state_dict(state_dict)
 	fusion_model.eval()
 
 	outputs = []
 	ground_truths = []
 	for item in items:
-		feature_path = os.path.join(feature_root, item["rel_path"].replace(".mp4", ".npz"))
+		feature_path = os.path.join(feature_root, _replace_ext(item["rel_path"], ".npz"))
 		if not os.path.exists(feature_path):
 			print(f"[WARN] Missing features for {item['video_path']}")
 			continue
@@ -454,7 +543,15 @@ def main():
 	args = parser.parse_args()
 
 	args.ffmpeg_path = _resolve_ffmpeg_path(args.ffmpeg_path)
-	args.results_file = args.results_file
+	args.base_dataset_folder = _resolve_path(args.base_dataset_folder, PROJECT_ROOT)
+	args.results_file = _resolve_path(args.results_file, PROJECT_ROOT)
+	args.dfdc_root = _resolve_path(args.dfdc_root, PROJECT_ROOT)
+	args.preprocessed_root = _resolve_path(args.preprocessed_root, PROJECT_ROOT)
+	args.features_root = _resolve_path(args.features_root, PROJECT_ROOT)
+	args.checkpoint_path = _resolve_path(args.checkpoint_path, PROJECT_ROOT)
+	args.avhubert_ckpt = _resolve_path(args.avhubert_ckpt, PROJECT_ROOT)
+	args.face_predictor_path = _resolve_path(args.face_predictor_path, PROJECT_ROOT)
+	args.mean_face_path = _resolve_path(args.mean_face_path, PROJECT_ROOT)
 
 	dataset_map = {
 		"av1": os.path.join(args.base_dataset_folder, "av1.metadata.json"),
@@ -463,6 +560,8 @@ def main():
 		"faceforensics": os.path.join(args.base_dataset_folder, "faceforensics.metadata.json"),
 		"lavdf": os.path.join(args.base_dataset_folder, "lavdf.metadata.json"),
 	}
+
+	_validate_inputs(args, dataset_map)
 
 	selected = [name.strip() for name in args.datasets.split(",") if name.strip()]
 
