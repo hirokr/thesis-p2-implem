@@ -20,13 +20,13 @@ np.int = np.int_
 PROJECT_ROOT = Path(__file__).resolve().parent
 AVH_HUBERT_ROOT = PROJECT_ROOT / "av_hubert"
 AVH_FAIRSEQ_ROOT = AVH_HUBERT_ROOT / "fairseq"
-for path in (AVH_HUBERT_ROOT, AVH_HUBERT_ROOT / "avhubert", AVH_FAIRSEQ_ROOT):
+for path in (AVH_HUBERT_ROOT, AVH_FAIRSEQ_ROOT):
     path_str = str(path)
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
 from avhubert import hubert_pretraining, hubert, hubert_asr
-import av_hubert.avhubert.utils as avhubert_utils
+from avhubert.utils import CenterCrop, Compose, Normalize, load_video
 from fairseq import checkpoint_utils
 
 FPS = 25
@@ -43,10 +43,10 @@ def load_model(ckpt_path):
     return model, task
 
 def load_transforms(task):
-    return avhubert_utils.Compose([
-        avhubert_utils.Normalize(0.0, 255.0),
-        avhubert_utils.CenterCrop((task.cfg.image_crop_size, task.cfg.image_crop_size)),
-        avhubert_utils.Normalize(task.cfg.image_mean, task.cfg.image_std)
+    return Compose([
+        Normalize(0.0, 255.0),
+        CenterCrop((task.cfg.image_crop_size, task.cfg.image_crop_size)),
+        Normalize(task.cfg.image_mean, task.cfg.image_std)
     ])
 
 def compute_starting_silence(audio_path, threshold=0.0005, sr=16000):
@@ -80,7 +80,7 @@ def load_audio(path, silence_duration=0, sample_rate=16000, stack_order_audio=4)
     return audio_feats
 
 def extract_features(model, video_path, audio_path, transform, trimmed):
-    frames = avhubert_utils.load_video(video_path)
+    frames = load_video(video_path)
     frames = transform(frames)
     frames = torch.FloatTensor(frames).unsqueeze(0).unsqueeze(0).cuda()
 

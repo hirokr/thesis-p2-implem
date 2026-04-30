@@ -3,9 +3,10 @@ import json
 import os
 import shutil
 import sys
+import traceback
 from pathlib import Path
 from datetime import datetime
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 
 import numpy as np
 import torch
@@ -110,6 +111,31 @@ def _replace_ext(path_value, new_ext):
 	return root + new_ext
 
 
+def _append_failure_log(log_path, video_path, reason, error=None, extra=None):
+	if not log_path:
+		return
+	_ensure_dir(os.path.dirname(log_path))
+	stamp = datetime.now().isoformat(timespec="seconds")
+	message = f"[{stamp}] {reason} | {video_path}"
+	if error:
+		message += f" | error={error}"
+	if extra:
+		message += f" | {extra}"
+	with open(log_path, "a", encoding="utf-8") as handle:
+		handle.write(message + "\n")
+
+
+def _center_crop_frames(frames, crop_height, crop_width):
+	if frames is None or len(frames) == 0:
+		return frames
+	_, height, width, _ = frames.shape
+	if crop_height > height or crop_width > width:
+		return frames
+	y_start = (height - crop_height) // 2
+	x_start = (width - crop_width) // 2
+	return frames[:, y_start : y_start + crop_height, x_start : x_start + crop_width]
+
+
 def _resolve_ffmpeg_path(explicit_path=None):
 	if explicit_path:
 		return explicit_path
@@ -200,6 +226,7 @@ def _preprocess_video(
 	face_predictor_path,
 	mean_face_path,
 	ffmpeg_path,
+	failure_log,
 ):
 	import cv2
 	import dlib
@@ -218,15 +245,34 @@ def _preprocess_video(
 
 	try:
 		videogen = skvideo.io.vread(input_path)
-	except Exception:
+	except Exception as exc:
 		print(f"Failed to read video: {input_path}")
+		_append_failure_log(failure_log, input_path, "vread_failed", error=repr(exc))
 		return False
 
 	frames = np.array([frame for frame in videogen])
-	landmarks = [_detect_landmark(frame, detector, predictor) for frame in frames]
-	preprocessed_landmarks = landmarks_interpolate(landmarks)
+	landmarks = []
+	missing_landmarks = 0
+	for frame in frames:
+		coords = _detect_landmark(frame, detector, predictor)
+		if coords is None:
+			missing_landmarks += 1
+		landmarks.append(coords)
+	try:
+		preprocessed_landmarks = landmarks_interpolate(landmarks)
+	except Exception as exc:
+		_append_failure_log(
+			failure_log,
+			input_path,
+			"landmarks_interpolate_failed",
+			error=repr(exc),
+			extra=f"missing_landmarks={missing_landmarks}/{len(landmarks)}",
+		)
+		preprocessed_landmarks = None
 
 	try:
+		if preprocessed_landmarks is None:
+			raise ValueError("No valid landmarks to crop")
 		rois = crop_patch(
 			input_path,
 			preprocessed_landmarks,
@@ -239,9 +285,18 @@ def _preprocess_video(
 			crop_height=96,
 			crop_width=96,
 		)
-	except Exception:
-		print(f"Failed to preprocess video: {input_path}; passing whole video")
-		rois = frames[..., ::-1]
+	except Exception as exc:
+		print(f"[ERROR] crop_patch failed for {input_path}: {exc}")
+		print(f"Failed to preprocess video: {input_path}; using center crop")
+		_append_failure_log(
+			failure_log,
+			input_path,
+			"crop_patch_failed",
+			error=repr(exc),
+			extra=f"missing_landmarks={missing_landmarks}/{len(landmarks)}",
+		)
+		rois = _center_crop_frames(frames, 96, 96)
+		rois = rois[..., ::-1] if rois is not None else frames[..., ::-1]
 
 	audio_fn = os.path.join(output_video_dir, _replace_ext(video_filename, ".wav"))
 	write_video_ffmpeg(rois, roi_path, ffmpeg_path)
@@ -435,11 +490,34 @@ def _append_results(path, dataset_name, metrics, threshold, total_count, thresho
 		handle.write(row)
 
 
-def _preprocess_items(items, output_root, face_predictor_path, mean_face_path, ffmpeg_path, max_workers):
+def _preprocess_items(items, output_root, face_predictor_path, mean_face_path, ffmpeg_path, failure_log, max_workers):
 	if not items:
 		return
 
-	with ProcessPoolExecutor(max_workers=max_workers) as executor:
+	if not max_workers or max_workers <= 1:
+		for item in items:
+			input_dir = os.path.dirname(item["video_path"])
+			filename = os.path.basename(item["video_path"])
+			rel_dir = os.path.dirname(item["rel_path"])
+			output_dir = os.path.join(output_root, rel_dir)
+			try:
+				result = _preprocess_video(
+					input_dir,
+					filename,
+					output_dir,
+					face_predictor_path,
+					mean_face_path,
+					ffmpeg_path,
+					failure_log,
+				)
+				if not result:
+					print(f"[WARN] Failed to preprocess: {item['video_path']}")
+			except Exception as exc:
+				print(f"[ERROR] Exception while preprocessing {item['video_path']}: {exc}")
+		return
+
+	executor_cls = ThreadPoolExecutor if os.name == "nt" else ProcessPoolExecutor
+	with executor_cls(max_workers=max_workers) as executor:
 		futures = {}
 		for item in items:
 			input_dir = os.path.dirname(item["video_path"])
@@ -455,6 +533,7 @@ def _preprocess_items(items, output_root, face_predictor_path, mean_face_path, f
 				face_predictor_path,
 				mean_face_path,
 				ffmpeg_path,
+				failure_log,
 			)
 			futures[future] = item["video_path"]
 
@@ -525,7 +604,7 @@ def _evaluate(items, feature_root, checkpoint_path, dataset_name, threshold_stra
 		outputs.append(score)
 		ground_truths.append(item["label"])
 
-	outputs = np.array(outputs, dtype=np.float64)
+	outcdputs = np.array(outputs, dtype=np.float64)
 	ground_truths = np.array(ground_truths, dtype=np.int32)
 	if len(outputs) == 0:
 		raise RuntimeError(f"No features available for evaluation on {dataset_name}.")
@@ -545,6 +624,7 @@ def _run_dataset(dataset_name, items, dataset_root, args, model, transform):
 		args.face_predictor_path,
 		args.mean_face_path,
 		args.ffmpeg_path,
+		args.failure_log,
 		args.max_workers,
 	)
 	_extract_features(items, preproc_root, feature_root, model, transform, args.trimmed)
@@ -578,11 +658,17 @@ def main():
 	parser.add_argument("--mean_face_path", default=DEFAULT_MEAN_FACE_PATH, help="Mean face landmarks")
 	parser.add_argument("--ffmpeg_path", default=None, help="Explicit ffmpeg path")
 	parser.add_argument("--max_workers", type=int, default=8, help="Parallel workers for preprocessing")
+	parser.add_argument(
+		"--failure_log",
+		default=r"C:\t309\results\avh_aligned\preprocess_failures.log",
+		help="Path to log preprocessing failures",
+	)
 	parser.add_argument("--trimmed", action="store_true", help="Trim audio to starting silence")
 	parser.add_argument("--threshold_strategy", choices=["fixed", "youden", "f1"], default="f1", help="Threshold strategy")
 	parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for fixed strategy")
 	parser.add_argument("--auto_download_assets", action="store_true", help="Download missing landmark/mean-face assets")
 	parser.add_argument("--dry_run", action="store_true", help="Validate inputs and exit without processing")
+	parser.add_argument("--max_items", type=int, default=None, help="Limit items per dataset for debugging")
 	args = parser.parse_args()
 
 	args.ffmpeg_path = _resolve_ffmpeg_path(args.ffmpeg_path)
@@ -597,6 +683,7 @@ def main():
 	args.avhubert_ckpt = _resolve_path(args.avhubert_ckpt, PROJECT_ROOT)
 	args.face_predictor_path = _resolve_path(args.face_predictor_path, PROJECT_ROOT)
 	args.mean_face_path = _resolve_path(args.mean_face_path, PROJECT_ROOT)
+	args.failure_log = _resolve_path(args.failure_log, PROJECT_ROOT)
 
 	_maybe_download_assets(args.face_predictor_path, args.mean_face_path, args.auto_download_assets)
 
@@ -623,6 +710,8 @@ def main():
 
 	if missing:
 		raise FileNotFoundError("\n".join(missing))
+
+	print(f"CUDA available: {torch.cuda.is_available()}")
 
 	model, task = feature_extraction.load_model(args.avhubert_ckpt)
 	transform = feature_extraction.load_transforms(task)
@@ -652,6 +741,9 @@ def main():
 		if not items:
 			print(f"[WARN] No items for dataset '{dataset_name}'.")
 			continue
+
+		if args.max_items:
+			items = items[: args.max_items]
 
 		_run_dataset(dataset_name, items, None, args, model, transform)
 
