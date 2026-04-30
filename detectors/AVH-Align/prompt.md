@@ -1,0 +1,2 @@
+1) study this deepfake_process.py file and create a custom adapter on the preprocess.py file to test on the #sym:base_dataset_folder 's all datasets one by one then do @file:deepfake_feature_extraction.py , then @file:eval.py  and then save it on the #sym:results_file. in the file the results should be appended not reinitialised. for this tasks create customs adapters and for the matrics get the results on calculate the `Accuracy	Precision	Recall	F1	ROC_AUC	PR_AUC	EER	FPR`
+ask me anything if needed
