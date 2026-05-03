@@ -571,6 +571,31 @@ def _append_results(path, dataset_name, metrics, threshold, total_count, thresho
 		handle.write(row)
 
 
+def _load_completed_datasets(results_path):
+	if not results_path or not os.path.exists(results_path):
+		return set()
+
+	completed = set()
+	try:
+		with open(results_path, "r", encoding="utf-8") as handle:
+			for line in handle:
+				line = line.strip()
+				if not line.startswith("|"):
+					continue
+				if line.startswith("| Timestamp") or line.startswith("| ---"):
+					continue
+				parts = [part.strip() for part in line.strip("|").split("|")]
+				if len(parts) < 2:
+					continue
+				dataset = parts[1]
+				if dataset:
+					completed.add(dataset)
+	except OSError:
+		return set()
+
+	return completed
+
+
 def _preprocess_items(items, output_root, face_predictor_path, mean_face_path, ffmpeg_path, failure_log, max_workers):
 	if not items:
 		return
@@ -804,8 +829,12 @@ def main():
 
 	model, task = feature_extraction.load_model(args.avhubert_ckpt)
 	transform = feature_extraction.load_transforms(task)
+	completed = {name.lower() for name in _load_completed_datasets(args.results_file)}
 
 	for dataset_name in selected:
+		if dataset_name.lower() in completed:
+			print(f"[SKIP] Results already recorded for '{dataset_name}' in {args.results_file}.")
+			continue
 		if dataset_name not in dataset_map:
 			print(f"[WARN] Unknown dataset '{dataset_name}', skipping.")
 			continue
