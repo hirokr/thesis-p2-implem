@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import cv2
 import json
 import numpy as np
@@ -19,8 +20,11 @@ from .data_utils import truncate_feats
 
 import json
 
+CACHE_ROOT = Path(__file__).resolve().parents[2] / ".cached_data" / "test"
+
 # 保存 dict_db 到 JSON 文件
 def save_dict_db_to_json(dict_db, file_path):
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(dict_db, f, indent=4)
 
@@ -36,11 +40,12 @@ Transformers = [
 ]
 
 def choose_CLIP_model(clip_model):
+    weights_root = Path(__file__).resolve().parents[2] / ".weights"
     match clip_model:
         case 'CLIP-16':
-            return CLIPVisionModel.from_pretrained(".weights/clip-vit-base-patch16")
+            return CLIPVisionModel.from_pretrained(str(weights_root / "clip-vit-base-patch16"))
         case 'XCLIP-16':
-            return XCLIPVisionModel.from_pretrained(".weights/xclip-base-patch16")
+            return XCLIPVisionModel.from_pretrained(str(weights_root / "xclip-base-patch16"))
 
 def pad_tensor_to_multiple_of_8(x):
     T = x.size(0)
@@ -168,9 +173,9 @@ class IJCAI25testvideo(Dataset):
         self.transform = None
 
         # 新增缓存相关配置
-        self.video_cache_dir = os.path.join('./.cached_data/test/', f'ijcai25_{clip_model}_feats')
+        self.video_cache_dir = os.path.join(str(CACHE_ROOT), f'ijcai25_{clip_model}_feats')
         self.make_cache_dir(self.video_cache_dir)
-        self.audio_cache_dir = os.path.join('./.cached_data/test/', f'ijcai25_{ssl_model}_feat_{self.featureMapIndex}')
+        self.audio_cache_dir = os.path.join(str(CACHE_ROOT), f'ijcai25_{ssl_model}_feat_{self.featureMapIndex}')
         self.make_cache_dir(self.audio_cache_dir)
 
         # 检查是否需要预计算特征
@@ -199,7 +204,7 @@ class IJCAI25testvideo(Dataset):
                 if file.endswith(".mp4"):
                     file_paths.append(os.path.join(root, file))
 
-        db_path = '.cached_data/test/dict_db.json'
+        db_path = os.path.join(str(CACHE_ROOT), 'dict_db.json')
         if os.path.exists(db_path):
             dict_db = load_dict_db_from_json(db_path)
         else:
