@@ -433,7 +433,8 @@ class IJCAI25testvideo(Dataset):
                 if self.max_items and len(dict_db) >= self.max_items:
                     break
             if self.max_items and len(dict_db) >= self.max_items:
-                break
+                _debug(f"[DEBUG] Reached max_items limit: {self.max_items}")
+                return dict_db
             save_dict_db_to_json(dict_db,db_path)
             _debug(f"[DEBUG] Saved labels: {db_path}")
 

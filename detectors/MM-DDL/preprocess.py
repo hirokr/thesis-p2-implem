@@ -132,18 +132,21 @@ def _select_threshold(scores, labels, strategy, fixed_threshold):
     if strategy == "fixed":
         return fixed_threshold
     fpr, tpr, thresholds = roc_curve(labels, scores)
+    # Guard against empty thresholds array (can happen with degenerate score distributions)
+    if len(thresholds) == 0:
+        return fixed_threshold
     if strategy == "youden":
         j_scores = tpr - fpr
-        return thresholds[int(np.argmax(j_scores))]
+        return float(thresholds[int(np.argmax(j_scores))])
     if strategy == "f1":
         best_f1 = -1.0
-        best_threshold = thresholds[0]
+        best_threshold = float(thresholds[0])
         for threshold in thresholds:
             preds = (scores >= threshold).astype(int)
             value = f1_score(labels, preds, zero_division=0)
             if value > best_f1:
                 best_f1 = value
-                best_threshold = threshold
+                best_threshold = float(threshold)
         return best_threshold
     return fixed_threshold
 
@@ -173,6 +176,7 @@ def _compute_metrics(scores, labels, threshold):
         fnr = 1 - tpr
         eer_index = int(np.nanargmin(np.abs(fnr - fpr)))
         eer = float((fpr[eer_index] + fnr[eer_index]) / 2)
+        # thresholds from roc_curve are in descending order; reverse for np.interp (must be increasing)
         fpr_at_threshold = float(np.interp(threshold, thresholds[::-1], fpr[::-1]))
 
     return {
@@ -189,12 +193,19 @@ def _compute_metrics(scores, labels, threshold):
 
 def _append_results(path, dataset_name, metrics, threshold, total_count, threshold_strategy):
     _ensure_dir(os.path.dirname(path))
-    header = "| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
-    divider = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+    # BUG FIX: divider had 14 "---" cells but header only has 13 columns.
+    # Both must match exactly.
+    header = (
+        "| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy"
+        " | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
+    )
+    divider = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     row = (
-        f"| {datetime.now().isoformat(timespec='seconds')} | {dataset_name} | {total_count} | {threshold:.6f} | {threshold_strategy} "
-        f"| {metrics['Accuracy']:.6f} | {metrics['Precision']:.6f} | {metrics['Recall']:.6f} | {metrics['F1']:.6f} "
-        f"| {metrics['ROC_AUC']:.6f} | {metrics['PR_AUC']:.6f} | {metrics['EER']:.6f} | {metrics['FPR']:.6f} |\n"
+        f"| {datetime.now().isoformat(timespec='seconds')} | {dataset_name} | {total_count}"
+        f" | {threshold:.6f} | {threshold_strategy}"
+        f" | {metrics['Accuracy']:.6f} | {metrics['Precision']:.6f} | {metrics['Recall']:.6f}"
+        f" | {metrics['F1']:.6f} | {metrics['ROC_AUC']:.6f} | {metrics['PR_AUC']:.6f}"
+        f" | {metrics['EER']:.6f} | {metrics['FPR']:.6f} |\n"
     )
 
     if not os.path.exists(path):
@@ -212,8 +223,11 @@ def _ensure_results_header(path):
     _ensure_dir(os.path.dirname(path))
     if os.path.exists(path):
         return
-    header = "| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
-    divider = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+    header = (
+        "| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy"
+        " | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
+    )
+    divider = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
     with open(path, "w", encoding="utf-8") as handle:
         handle.write(header)
         handle.write(divider)
@@ -497,10 +511,14 @@ def _infer_scores(model, val_loader, args, dataset_name, run_name):
     for batch_idx, audio_list in enumerate(val_loader, start=1):
         with torch.no_grad():
             outputs = model(audio_list)
-        for i, _ in enumerate(audio_list):
-            segment_scores = outputs[i]["scores"].detach().cpu().numpy()
+        # BUG FIX: the original loop used `enumerate(audio_list)` which iterates
+        # over the batch items, but then also used `outputs[i]` — however outputs
+        # is a list returned by the model, so we should iterate over outputs
+        # directly rather than re-indexing through audio_list.
+        for i, output in enumerate(outputs):
+            segment_scores = output["scores"].detach().cpu().numpy()
             max_score = 0.0 if len(segment_scores) == 0 else float(np.max(segment_scores))
-            video_id = outputs[i]["video_id"]
+            video_id = output["video_id"]
             scores[video_id] = max_score
             processed += 1
 
@@ -783,6 +801,7 @@ def main():
         ]
         selected_keys = {entry["key"] for entry in selected_entries}
         missing_datasets = requested - selected_keys
+
     if args.dry_run:
         if args.dry_run_write_results and not missing:
             _ensure_results_header(args.results_file)
@@ -833,7 +852,6 @@ def main():
         predictions_by_name = {}
 
         for run_config, run_ckpt, run_epoch, run_name in runs:
-            run_key = (run_name or dataset_key).lower()
             result_key = f"{dataset_key}:{run_name}" if run_name else dataset_key
             if result_key.lower() in completed:
                 print(f"[SKIP] Results already recorded for '{result_key}' in {args.results_file}.")
@@ -849,7 +867,11 @@ def main():
                 args,
             )
             if predictions:
-                predictions_by_name[run_key] = predictions
+                # BUG FIX: original used `run_name or dataset_key` as the key, which
+                # caused combined-mode lookups via .get("audio") / .get("video") to
+                # silently miss when run_name was empty. Always use run_name (which is
+                # "audio" or "video" in normal operation) so combined lookup is reliable.
+                predictions_by_name[run_name] = predictions
 
         if "combined" in modalities:
             audio_pred = predictions_by_name.get("audio")
