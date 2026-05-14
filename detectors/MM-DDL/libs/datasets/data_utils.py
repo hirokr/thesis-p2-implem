@@ -1,9 +1,106 @@
 import os
 import copy
 import random
+import ctypes
 import numpy as np
 import random
+import time
 import torch
+
+_PIN_MEMORY_OK = True
+
+
+def set_pin_memory_ok(value):
+    global _PIN_MEMORY_OK
+    _PIN_MEMORY_OK = bool(value)
+
+
+def is_pin_memory_ok():
+    return _PIN_MEMORY_OK
+
+
+def get_cuda_mem_mb(device):
+    if device is None or device.type != "cuda":
+        return None
+    allocated = torch.cuda.memory_allocated(device) / (1024 ** 2)
+    reserved = torch.cuda.memory_reserved(device) / (1024 ** 2)
+    return allocated, reserved
+
+
+def _get_cpu_rss_mb_windows():
+    class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+        _fields_ = [
+            ("cb", ctypes.c_uint32),
+            ("PageFaultCount", ctypes.c_uint32),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    counters = PROCESS_MEMORY_COUNTERS()
+    counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+    handle = ctypes.windll.kernel32.GetCurrentProcess()
+    if not ctypes.windll.psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+        return None
+    return counters.WorkingSetSize / (1024 ** 2)
+
+
+def get_cpu_rss_mb():
+    try:
+        import psutil  # type: ignore
+
+        return psutil.Process(os.getpid()).memory_info().rss / (1024 ** 2)
+    except Exception:
+        if os.name == "nt":
+            try:
+                return _get_cpu_rss_mb_windows()
+            except Exception:
+                return None
+    return None
+
+
+def get_loader_queue_size(loader):
+    iterator = getattr(loader, "_iterator", None)
+    if iterator is None:
+        return None
+    queues = getattr(iterator, "_index_queues", None)
+    if not queues:
+        return None
+    total = 0
+    for queue in queues:
+        try:
+            total += queue.qsize()
+        except (NotImplementedError, OSError, AttributeError):
+            return None
+    return total
+
+
+def build_precompute_loader(
+    dataset,
+    batch_size,
+    num_workers,
+    pin_memory,
+    collate_fn=None,
+    prefetch_factor=2,
+):
+    loader_kwargs = {
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "shuffle": False,
+        "drop_last": False,
+        "pin_memory": pin_memory,
+        "collate_fn": collate_fn,
+    }
+    if num_workers and num_workers > 0:
+        loader_kwargs["persistent_workers"] = True
+        loader_kwargs["prefetch_factor"] = prefetch_factor
+        loader_kwargs["multiprocessing_context"] = "spawn"
+    return torch.utils.data.DataLoader(dataset, **loader_kwargs)
 
 
 def trivial_batch_collator(batch):

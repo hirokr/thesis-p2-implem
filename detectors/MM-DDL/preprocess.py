@@ -617,6 +617,8 @@ def _evaluate_dataset(dataset_name, items, dataset_root, run_config, run_ckpt, r
     cfg["loader"]["num_workers"] *= len(cfg["devices"])
     cfg["dataset"]["devices"] = cfg["devices"]
     cfg["dataset"]["num_workers"] = cfg["loader"]["num_workers"]
+    if getattr(args, "max_items", None):
+        cfg["dataset"]["max_items"] = args.max_items
     _log(args, f"[INFO] Devices={cfg['devices']} num_workers={cfg['loader']['num_workers']}")
 
     ckpt_file = _resolve_ckpt(run_ckpt, run_epoch)

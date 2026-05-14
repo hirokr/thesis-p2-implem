@@ -1,7 +1,10 @@
 import os
+import gc
 from pathlib import Path
 import cv2
 import json
+import math
+import time
 import numpy as np
 import librosa
 import albumentations
@@ -12,12 +15,19 @@ import torchaudio
 import torchvision
 import torch.nn as nn
 from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 from transformers import CLIPVisionModel, XCLIPVisionModel, AutoModel
 
 from .datasets import register_dataset
-from .data_utils import truncate_feats
+from .data_utils import (
+    truncate_feats,
+    build_precompute_loader,
+    get_cuda_mem_mb,
+    get_cpu_rss_mb,
+    get_loader_queue_size,
+    is_pin_memory_ok,
+    set_pin_memory_ok,
+)
 
 import json
 
@@ -80,6 +90,16 @@ def _collate_skip_none(batch):
     if not batch:
         return None
     return default_collate(batch)
+
+
+def _is_oom_error(exc):
+    message = str(exc).lower()
+    return "out of memory" in message or "cuda" in message and "memory" in message
+
+
+def _is_pin_memory_error(exc):
+    message = str(exc).lower()
+    return "pin memory" in message or "pinned memory" in message
 
 # 保存 dict_db 到 JSON 文件
 def save_dict_db_to_json(dict_db, file_path):
@@ -202,6 +222,64 @@ class VideoFrameDataset(Dataset):
         finally:
             cap.release()
 
+
+class VideoChunkDataset(Dataset):
+    def __init__(self, data_list, dataset_root, chunk_size):
+        self.data_list = data_list
+        self.dataset_root = dataset_root
+        self.chunk_size = max(1, int(chunk_size))
+        self.trans = self._default_transform()
+        self.tasks = []
+        for item in self.data_list:
+            total_frames = int(item.get("frame_count") or 0)
+            if total_frames <= 0:
+                continue
+            num_chunks = max(1, (total_frames + self.chunk_size - 1) // self.chunk_size)
+            for chunk_idx in range(num_chunks):
+                start = chunk_idx * self.chunk_size
+                end = min(start + self.chunk_size, total_frames)
+                self.tasks.append((item, start, end, total_frames))
+
+    def _default_transform(self):
+        return albumentations.Compose([
+            albumentations.Resize(224, 224),
+            albumentations.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ])
+
+    def __len__(self):
+        return len(self.tasks)
+
+    def __getitem__(self, idx):
+        video_item, start, end, total_frames = self.tasks[idx]
+        video_path = video_item.get("video_path") or os.path.join(self.dataset_root, video_item["id"])
+        cap = cv2.VideoCapture(video_path)
+        try:
+            if not cap.isOpened():
+                raise RuntimeError("Unable to open video")
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+            frames = []
+            current = start
+            while current < end:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                augmented = self.trans(image=frame)
+                image = augmented["image"].transpose(2, 0, 1)
+                frames.append(image)
+                current += 1
+            if not frames:
+                return None
+            frames = np.ascontiguousarray(np.stack(frames, axis=0))
+            frames = torch.from_numpy(frames)
+            return frames, video_item["id"], start, total_frames
+        except Exception:
+            with open("videos.txt", "a") as f:
+                f.write(f"{video_path}\n")
+            return None
+        finally:
+            cap.release()
+
 @register_dataset("ijcai25testvideo")
 class IJCAI25testvideo(Dataset):
     def __init__(
@@ -221,6 +299,12 @@ class IJCAI25testvideo(Dataset):
         input_dim,          # input feat dim
         num_classes,        # number of action categories
         featureMapIndex,
+        max_items=None,
+        precompute_batch_size=1,
+        precompute_chunk_size=32,
+        precompute_log_every=25,
+        precompute_cleanup_every=50,
+        precompute_prefetch_factor=2,
     ):
         assert crop_ratio == None or len(crop_ratio) == 2
         self.is_training = is_training
@@ -237,11 +321,22 @@ class IJCAI25testvideo(Dataset):
         self.featureMapIndex = featureMapIndex
         self.label_dict = None
 
+        self.max_items = max_items
+        self.precompute_batch_size = max(1, int(precompute_batch_size))
+        if self.precompute_batch_size not in (1, 2):
+            self.precompute_batch_size = 1
+        self.precompute_chunk_size = max(1, int(precompute_chunk_size))
+        self.precompute_log_every = max(1, int(precompute_log_every))
+        self.precompute_cleanup_every = max(1, int(precompute_cleanup_every))
+        self.precompute_prefetch_factor = max(1, int(precompute_prefetch_factor))
+
         # 读取数据集信息，并存储为list
         self.dataset_root = dataset_root
         _debug(f"[DEBUG] Dataset root: {self.dataset_root}")
         dict_db = self._load_label_db()
         self.data_list = dict_db
+        if self.max_items:
+            self.data_list = self.data_list[: self.max_items]
         _debug(f"[DEBUG] Loaded {len(self.data_list)} items")
         self.device = torch.device(devices[0])
         self.num_workers = num_workers
@@ -292,6 +387,10 @@ class IJCAI25testvideo(Dataset):
             for file in files:
                 if file.endswith(".mp4"):
                     file_paths.append(os.path.join(root, file))
+                    if self.max_items and len(file_paths) >= self.max_items:
+                        break
+            if self.max_items and len(file_paths) >= self.max_items:
+                break
 
         db_path = os.path.join(str(CACHE_ROOT), 'dict_db.json')
         if os.path.exists(db_path):
@@ -328,8 +427,13 @@ class IJCAI25testvideo(Dataset):
                     'rel_path': rel_path,
                     'video_path': video_path,
                     'fps': fps,
-                    'duration': duration
+                    'duration': duration,
+                    'frame_count': int(frame_count)
                 })
+                if self.max_items and len(dict_db) >= self.max_items:
+                    break
+            if self.max_items and len(dict_db) >= self.max_items:
+                break
             save_dict_db_to_json(dict_db,db_path)
             _debug(f"[DEBUG] Saved labels: {db_path}")
 
@@ -376,42 +480,178 @@ class IJCAI25testvideo(Dataset):
                 if not os.path.exists(self._get_feature_path(item['id'],modal=modal))
             ]
             _debug(f"[DEBUG] Video features pending: {len(filtered_data)}")
-            dataset = VideoFrameDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
-            loader = DataLoader(
-                dataset,
-                batch_size=1,
-                shuffle=False,
-                num_workers=self.num_workers,
-                pin_memory=True,
-                collate_fn=_collate_skip_none,
-            )
-            with torch.no_grad():
-                for batch in tqdm(loader, desc='Precomputing Features'):
-                    if batch is None:
+
+            def finalize_video(memmap, tmp_path, final_path, written_frames):
+                if memmap is None or not tmp_path or not final_path:
+                    return 0
+                memmap.flush()
+                expected_frames, feat_dim = memmap.shape
+                del memmap
+                if written_frames <= 0:
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                    return 0
+                if written_frames == expected_frames:
+                    os.replace(tmp_path, final_path)
+                    return 1
+                src = np.lib.format.open_memmap(tmp_path, mode="r")
+                dst = np.lib.format.open_memmap(
+                    final_path,
+                    mode="w+",
+                    dtype=np.float32,
+                    shape=(written_frames, feat_dim),
+                )
+                step = 1024
+                for start in range(0, written_frames, step):
+                    end = min(start + step, written_frames)
+                    dst[start:end] = src[start:end]
+                dst.flush()
+                del src
+                del dst
+                os.remove(tmp_path)
+                return 1
+
+            def log_status(batch_idx, processed, completed, start_time, loader):
+                elapsed = max(1e-6, time.perf_counter() - start_time)
+                rate = processed / elapsed
+                vram = get_cuda_mem_mb(self.device)
+                cpu = get_cpu_rss_mb()
+                queue_size = get_loader_queue_size(loader)
+                if vram:
+                    vram_text = f"{vram[0]:.0f}/{vram[1]:.0f}MB"
+                else:
+                    vram_text = "n/a"
+                cpu_text = f"{cpu:.0f}MB" if cpu is not None else "n/a"
+                queue_text = str(queue_size) if queue_size is not None else "n/a"
+                print(
+                    f"[PRECOMPUTE][video] batch {batch_idx} "
+                    f"samples={processed} videos={completed} rate={rate:.2f}/s "
+                    f"vram={vram_text} cpu={cpu_text} queue={queue_text}"
+                )
+
+            pin_memory = self.device.type == "cuda" and is_pin_memory_ok()
+            chunk_size = self.precompute_chunk_size
+            while True:
+                filtered_data = [
+                    item for item in self.data_list
+                    if not os.path.exists(self._get_feature_path(item['id'],modal=modal))
+                ]
+                if not filtered_data:
+                    break
+                workers = self.num_workers or 0
+                if os.name == "nt":
+                    workers = max(4, min(workers or 4, 8))
+
+                dataset = VideoChunkDataset(filtered_data, self.dataset_root, chunk_size)
+                loader = build_precompute_loader(
+                    dataset,
+                    batch_size=1,
+                    num_workers=workers,
+                    pin_memory=pin_memory,
+                    collate_fn=_collate_skip_none,
+                    prefetch_factor=self.precompute_prefetch_factor,
+                )
+
+                current_video = None
+                current_tmp = None
+                current_path = None
+                memmap = None
+                written_frames = 0
+                completed_videos = 0
+                processed = 0
+                start_time = time.perf_counter()
+                try:
+                    for batch_idx, batch in enumerate(loader, start=1):
+                        if batch is None:
+                            continue
+                        frames, video_id, start_idx, total_frames = batch
+                        if isinstance(video_id, (list, tuple)):
+                            video_id = video_id[0]
+                        if torch.is_tensor(start_idx):
+                            start_idx = int(start_idx[0])
+                        if torch.is_tensor(total_frames):
+                            total_frames = int(total_frames[0])
+
+                        if current_video != video_id:
+                            completed_videos += finalize_video(
+                                memmap, current_tmp, current_path, written_frames
+                            )
+                            memmap = None
+                            written_frames = 0
+                            current_video = video_id
+                            current_path = self._get_feature_path(video_id, modal=modal)
+                            current_tmp = f"{current_path}.partial"
+                            if os.path.exists(current_tmp):
+                                os.remove(current_tmp)
+
+                        try:
+                            frames = frames.to(self.device, non_blocking=True)
+                            frames = frames.squeeze(0)
+                            t, _, h, w = frames.shape
+                            frames = frames.reshape(-1, 3, h, w)
+                            if self.clip_model in {"XCLIP-16", "XCLIP-32"}:
+                                frames = pad_tensor_to_multiple_of_8(frames)
+                            device_type = "cuda" if self.device.type == "cuda" else "cpu"
+                            with torch.no_grad(), torch.autocast(
+                                device_type=device_type,
+                                enabled=self.device.type == "cuda",
+                            ):
+                                if self.clip_model in Transformers:
+                                    feats = self.model(frames, output_hidden_states=True).pooler_output
+                                else:
+                                    feats = self.model(frames)
+                            feats = feats[:t]
+                            feats = feats.detach().cpu().numpy().astype(np.float32)
+                            if memmap is None:
+                                feat_dim = feats.shape[1]
+                                memmap = np.lib.format.open_memmap(
+                                    current_tmp,
+                                    mode="w+",
+                                    dtype=np.float32,
+                                    shape=(total_frames, feat_dim),
+                                )
+                            end_idx = start_idx + feats.shape[0]
+                            memmap[start_idx:end_idx] = feats
+                            written_frames = max(written_frames, end_idx)
+                        except RuntimeError as exc:
+                            if _is_oom_error(exc):
+                                if memmap is not None:
+                                    del memmap
+                                    memmap = None
+                                if current_tmp and os.path.exists(current_tmp):
+                                    os.remove(current_tmp)
+                                if self.device.type == "cuda":
+                                    torch.cuda.empty_cache()
+                                raise
+                            raise
+                        finally:
+                            del frames
+                            if "feats" in locals():
+                                del feats
+
+                        processed += 1
+                        if processed == 1 or processed % self.precompute_log_every == 0:
+                            log_status(batch_idx, processed, completed_videos, start_time, loader)
+                        if processed % self.precompute_cleanup_every == 0:
+                            gc.collect()
+                            if self.device.type == "cuda":
+                                torch.cuda.empty_cache()
+                except RuntimeError as exc:
+                    if _is_pin_memory_error(exc) and pin_memory:
+                        set_pin_memory_ok(False)
+                        pin_memory = False
                         continue
-                    frames, video_id = batch
-                    feature_path = self._get_feature_path(video_id[0],modal=modal)
-                    try:
-                        frames = frames.to(self.device)
-                        b, T, _, h, w = frames.shape
-                        frames = frames.reshape(-1, 3, h, w)
-                        if self.clip_model == 'XCLIP-16' or self.clip_model == 'XCLIP-32':
-                            frames = pad_tensor_to_multiple_of_8(frames) # 填充至 8n 个片段
-                        if self.clip_model in Transformers:
-                            feats = self.model(frames, output_hidden_states=True)
-                            feats = feats.pooler_output
-                        else:
-                            feats = self.model(frames)
-                        feats = feats[:T]
-                        np.save(feature_path, feats.cpu().numpy().astype(np.float32))
-                    except: # 视频过长，显存占用过大
-                        del frames
-                        with open('videos.txt','a') as f:
-                            f.write(f"GPU memory is insufficient: {video_id[0]}\n")
-                        print(f"WARNING!!!!!!! ")
-                        print(f"GPU memory is insufficient for {video_id[0]}\n")
-            self.model.cpu()
-            del self.model
+                    if _is_oom_error(exc) and chunk_size > 1:
+                        chunk_size = max(1, chunk_size // 2)
+                        print(f"[WARN] OOM detected, reducing chunk_size to {chunk_size}")
+                        continue
+                    raise
+                finally:
+                    completed_videos += finalize_video(
+                        memmap, current_tmp, current_path, written_frames
+                    )
+                break
+
             _debug("[DEBUG] Video feature precompute done")
 
         elif modal == 'audio':
@@ -424,25 +664,97 @@ class IJCAI25testvideo(Dataset):
                 if not os.path.exists(self._get_feature_path(item['id'],modal=modal))
             ]
             _debug(f"[DEBUG] Audio features pending: {len(filtered_data)}")
-            dataset = WaveformDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
-            loader = DataLoader(
-                dataset,
-                batch_size=1,
-                num_workers=self.num_workers,
-                shuffle=False,
-                collate_fn=_collate_skip_none,
-            )
-            with torch.inference_mode():
-                for batch in tqdm(loader, desc='Precomputing Features'):
-                    if batch is None:
+            pin_memory = self.device.type == "cuda" and is_pin_memory_ok()
+            batch_size = self.precompute_batch_size
+            while True:
+                filtered_data = [
+                    item for item in self.data_list
+                    if not os.path.exists(self._get_feature_path(item['id'],modal=modal))
+                ]
+                if not filtered_data:
+                    break
+                dataset = WaveformDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
+                workers = self.num_workers or 0
+                if os.name == "nt":
+                    workers = max(4, min(workers or 4, 8))
+
+                loader = build_precompute_loader(
+                    dataset,
+                    batch_size=batch_size,
+                    num_workers=workers,
+                    pin_memory=pin_memory,
+                    collate_fn=_collate_skip_none,
+                    prefetch_factor=self.precompute_prefetch_factor,
+                )
+                processed = 0
+                start_time = time.perf_counter()
+                try:
+                    for batch_idx, batch in enumerate(loader, start=1):
+                        if batch is None:
+                            continue
+                        waveform, sample_rate, audio_id = batch
+                        if not isinstance(audio_id, (list, tuple)):
+                            audio_ids = [audio_id]
+                        else:
+                            audio_ids = list(audio_id)
+                        if waveform.dim() == 1:
+                            waveform = waveform.unsqueeze(0)
+
+                        for idx, audio_key in enumerate(audio_ids):
+                            feature_path = self._get_feature_path(audio_key, modal=modal)
+                            try:
+                                waveform_i = waveform[idx].unsqueeze(0).to(self.device, non_blocking=True)
+                                device_type = "cuda" if self.device.type == "cuda" else "cpu"
+                                with torch.inference_mode(), torch.autocast(
+                                    device_type=device_type,
+                                    enabled=self.device.type == "cuda",
+                                ):
+                                    feats, _ = self.model.extract_features(waveform_i)
+                                    feats = torch.stack(feats, dim=0).squeeze()
+                                    feats = feats[self.featureMapIndex].transpose(1, 0)
+                                np.save(feature_path, feats.cpu().numpy().astype(np.float32))
+                            except RuntimeError as exc:
+                                if _is_oom_error(exc):
+                                    if self.device.type == "cuda":
+                                        torch.cuda.empty_cache()
+                                    raise
+                                raise
+                            finally:
+                                if "waveform_i" in locals():
+                                    del waveform_i
+                                if "feats" in locals():
+                                    del feats
+
+                            processed += 1
+                        if processed == 1 or processed % self.precompute_log_every == 0:
+                            elapsed = max(1e-6, time.perf_counter() - start_time)
+                            rate = processed / elapsed
+                            vram = get_cuda_mem_mb(self.device)
+                            cpu = get_cpu_rss_mb()
+                            queue_size = get_loader_queue_size(loader)
+                            vram_text = f"{vram[0]:.0f}/{vram[1]:.0f}MB" if vram else "n/a"
+                            cpu_text = f"{cpu:.0f}MB" if cpu is not None else "n/a"
+                            queue_text = str(queue_size) if queue_size is not None else "n/a"
+                            print(
+                                f"[PRECOMPUTE][audio] batch {batch_idx} "
+                                f"samples={processed} rate={rate:.2f}/s vram={vram_text} "
+                                f"cpu={cpu_text} queue={queue_text}"
+                            )
+                        if processed % self.precompute_cleanup_every == 0:
+                            gc.collect()
+                            if self.device.type == "cuda":
+                                torch.cuda.empty_cache()
+                except RuntimeError as exc:
+                    if _is_pin_memory_error(exc) and pin_memory:
+                        set_pin_memory_ok(False)
+                        pin_memory = False
                         continue
-                    waveform, sample_rate, audio_id = batch
-                    feature_path = self._get_feature_path(audio_id[0],modal=modal)
-                    waveform = waveform.to(self.device)
-                    feats, _ = self.model.extract_features(waveform)
-                    feats = torch.stack(feats, dim=0).squeeze()
-                    feats = feats[self.featureMapIndex].transpose(1, 0)
-                    np.save(feature_path, feats.cpu().numpy().astype(np.float32))
+                    if _is_oom_error(exc) and batch_size > 1:
+                        batch_size = max(1, batch_size // 2)
+                        print(f"[WARN] OOM detected, reducing batch_size to {batch_size}")
+                        continue
+                    raise
+                break
             self.model.cpu()
             del self.model
             _debug("[DEBUG] Audio feature precompute done")

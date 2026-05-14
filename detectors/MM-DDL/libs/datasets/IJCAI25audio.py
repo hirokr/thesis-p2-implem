@@ -1,5 +1,7 @@
 import os
+import gc
 import json
+import time
 import numpy as np
 import glob
 import random
@@ -12,13 +14,61 @@ import subprocess
 import torch
 import torchaudio
 from torch.utils.data import Dataset
+from torch.utils.data._utils.collate import default_collate
 from torch.nn import functional as F
-from torch.utils.data import DataLoader
 from functools import partial
 
 from .datasets import register_dataset
-from .data_utils import truncate_feats
+from .data_utils import (
+    truncate_feats,
+    build_precompute_loader,
+    get_cuda_mem_mb,
+    get_cpu_rss_mb,
+    get_loader_queue_size,
+    is_pin_memory_ok,
+    set_pin_memory_ok,
+)
 import torchaudio.transforms as T
+
+
+def _collate_skip_none(batch):
+    batch = [item for item in batch if item is not None]
+    if not batch:
+        return None
+    return default_collate(batch)
+
+
+def _is_oom_error(exc):
+    message = str(exc).lower()
+    return "out of memory" in message or "cuda" in message and "memory" in message
+
+
+def _is_pin_memory_error(exc):
+    message = str(exc).lower()
+    return "pin memory" in message or "pinned memory" in message
+
+
+class AudioPrecomputeDataset(Dataset):
+    def __init__(self, data_list, dataset_root, sample_rate):
+        self.data_list = data_list
+        self.dataset_root = dataset_root
+        self.sample_rate = sample_rate
+
+    def __len__(self):
+        return len(self.data_list)
+
+    def __getitem__(self, idx):
+        video_item = self.data_list[idx]
+        audio_path = os.path.join(self.dataset_root, video_item["id"])
+        try:
+            waveform, sample_rate = librosa.load(audio_path, sr=None, mono=True)
+            waveform = torch.from_numpy(waveform)
+            waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
+        except Exception:
+            with open("audios.txt", "a") as f:
+                f.write(f"{audio_path}\n")
+            return None
+        return waveform, sample_rate, video_item["id"]
 
 
 @register_dataset("ijcai25audio")
@@ -39,6 +89,11 @@ class IJCAI25(Dataset):
         input_dim,          # input feat dim
         num_classes,        # number of action categories
         featureMapIndex,
+        max_items=None,
+        precompute_batch_size=1,
+        precompute_log_every=25,
+        precompute_cleanup_every=50,
+        precompute_prefetch_factor=2,
     ):
         assert crop_ratio == None or len(crop_ratio) == 2
         self.is_training = is_training
@@ -54,10 +109,20 @@ class IJCAI25(Dataset):
         self.featureMapIndex = featureMapIndex
         self.label_dict = None
 
+        self.max_items = max_items
+        self.precompute_batch_size = max(1, int(precompute_batch_size))
+        if self.precompute_batch_size not in (1, 2):
+            self.precompute_batch_size = 1
+        self.precompute_log_every = max(1, int(precompute_log_every))
+        self.precompute_cleanup_every = max(1, int(precompute_cleanup_every))
+        self.precompute_prefetch_factor = max(1, int(precompute_prefetch_factor))
+
         # 读取数据集信息，并存储为list
         self.dataset_root = dataset_root
         dict_db = self._load_label_db()
         self.data_list = dict_db
+        if self.max_items:
+            self.data_list = self.data_list[: self.max_items]
         self.device = torch.device(devices[0])
         self.num_workers = num_workers
 
@@ -143,6 +208,10 @@ class IJCAI25(Dataset):
                     'segments': segments,
                     'labels': labels
                 })
+                if self.max_items and len(dict_db) >= self.max_items:
+                    break
+            if self.max_items and len(dict_db) >= self.max_items:
+                break
 
         return dict_db
 
@@ -155,49 +224,131 @@ class IJCAI25(Dataset):
         return os.path.join(feature_dir, f"{root}.npy")
 
     def _precompute_features(self):
-        """无填充的特征预计算"""
+        """Audio feature precompute with safe workers and logging."""
 
-        class PrecomputeDataset(Dataset):
-            def __init__(self, data_list, dataset_root, sample_rate):
-                self.data_list = data_list
-                self.dataset_root = dataset_root
-                self.sample_rate = sample_rate
+        def log_status(tag, batch_idx, processed, start_time, loader):
+            elapsed = max(1e-6, time.perf_counter() - start_time)
+            rate = processed / elapsed
+            vram = get_cuda_mem_mb(self.device)
+            cpu = get_cpu_rss_mb()
+            queue_size = get_loader_queue_size(loader)
+            if vram:
+                vram_text = f"{vram[0]:.0f}/{vram[1]:.0f}MB"
+            else:
+                vram_text = "n/a"
+            cpu_text = f"{cpu:.0f}MB" if cpu is not None else "n/a"
+            queue_text = str(queue_size) if queue_size is not None else "n/a"
+            print(
+                f"[PRECOMPUTE][{tag}] batch {batch_idx} "
+                f"samples={processed} rate={rate:.2f}/s vram={vram_text} "
+                f"cpu={cpu_text} queue={queue_text}"
+            )
 
-            def __len__(self):
-                return len(self.data_list)
+        def run_precompute(batch_size, pin_memory):
+            pending = [
+                item for item in self.data_list
+                if not os.path.exists(self._get_feature_path(item["id"]))
+            ]
+            if not pending:
+                return "ok"
 
-            def __getitem__(self, idx):
-                video_item = self.data_list[idx]
-                audio_path = os.path.join(self.dataset_root, video_item['id'])
-                try:
-                    waveform, sample_rate = librosa.load(audio_path, sr=None, mono=True)
-                    waveform = torch.from_numpy(waveform)
-                    waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
-                except Exception as e:
-                    with open('audios.txt','a') as f:
-                        f.write(f"{audio_path}\n")
-                return waveform, sample_rate, video_item['id']
+            workers = self.num_workers or 0
+            if os.name == "nt":
+                workers = max(4, min(workers or 4, 8))
+
+            dataset = AudioPrecomputeDataset(
+                pending,
+                dataset_root=self.dataset_root,
+                sample_rate=self.bundle.sample_rate,
+            )
+            loader = build_precompute_loader(
+                dataset,
+                batch_size=batch_size,
+                num_workers=workers,
+                pin_memory=pin_memory,
+                collate_fn=_collate_skip_none,
+                prefetch_factor=self.precompute_prefetch_factor,
+            )
+
+            processed = 0
+            start_time = time.perf_counter()
+            try:
+                for batch_idx, batch in enumerate(loader, start=1):
+                    if batch is None:
+                        continue
+                    waveform, sample_rate, audio_id = batch
+                    if not isinstance(audio_id, (list, tuple)):
+                        audio_ids = [audio_id]
+                    else:
+                        audio_ids = list(audio_id)
+                    if waveform.dim() == 1:
+                        waveform = waveform.unsqueeze(0)
+
+                    for idx, audio_key in enumerate(audio_ids):
+                        feature_path = self._get_feature_path(audio_key)
+                        try:
+                            waveform_i = waveform[idx].unsqueeze(0).to(self.device, non_blocking=True)
+                            device_type = "cuda" if self.device.type == "cuda" else "cpu"
+                            with torch.inference_mode(), torch.autocast(
+                                device_type=device_type,
+                                enabled=self.device.type == "cuda",
+                            ):
+                                feats, _ = self.model.extract_features(waveform_i)
+                                feats = torch.stack(feats, dim=0).squeeze()
+                                feats = feats[self.featureMapIndex].transpose(1, 0)
+                            np.save(feature_path, feats.cpu().numpy().astype(np.float32))
+                        except RuntimeError as exc:
+                            if _is_oom_error(exc):
+                                if self.device.type == "cuda":
+                                    torch.cuda.empty_cache()
+                                if batch_size > 1:
+                                    return "oom"
+                                with open("audios.txt", "a") as f:
+                                    f.write(f"GPU memory is insufficient: {audio_key}\n")
+                                continue
+                            raise
+                        finally:
+                            if "waveform_i" in locals():
+                                del waveform_i
+                            if "feats" in locals():
+                                del feats
+
+                        processed += 1
+                    if processed == 1 or processed % self.precompute_log_every == 0:
+                        log_status("audio", batch_idx, processed, start_time, loader)
+                    if processed % self.precompute_cleanup_every == 0:
+                        gc.collect()
+                        if self.device.type == "cuda":
+                            torch.cuda.empty_cache()
+            except RuntimeError as exc:
+                if _is_pin_memory_error(exc):
+                    return "pin_memory"
+                if _is_oom_error(exc):
+                    return "oom"
+                raise
+            return "ok"
 
         self.model = self.bundle.get_model()
         self.model.eval().to(self.device)
 
-        # 先过滤掉已经生成特征的视频项
-        filtered_data = [
-            item for item in self.data_list
-            if not os.path.exists(self._get_feature_path(item['id']))
-        ]
+        pin_memory = self.device.type == "cuda" and is_pin_memory_ok()
+        batch_size = self.precompute_batch_size
+        while True:
+            result = run_precompute(batch_size, pin_memory)
+            if result == "ok":
+                break
+            if result == "pin_memory" and pin_memory:
+                set_pin_memory_ok(False)
+                pin_memory = False
+                continue
+            if result == "oom" and batch_size > 1:
+                batch_size = max(1, batch_size // 2)
+                print(f"[WARN] OOM detected, reducing batch_size to {batch_size}")
+                continue
+            if result != "ok":
+                print("[WARN] Precompute stopped early due to repeated OOM.")
+            break
 
-        dataset = PrecomputeDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
-        loader = DataLoader(dataset, batch_size=1, num_workers=self.num_workers, shuffle=False)
-        with torch.inference_mode():
-            for batch in tqdm(loader, desc='Precomputing Features'):
-                waveform, sample_rate, audio_id = batch
-                feature_path = self._get_feature_path(audio_id[0])
-                waveform = waveform.to(self.device)
-                feats, _ = self.model.extract_features(waveform)
-                feats = torch.stack(feats, dim=0).squeeze()
-                feats = feats[self.featureMapIndex].transpose(1, 0)
-                np.save(feature_path, feats.cpu().numpy().astype(np.float32))
         self.model.cpu()
         del self.model
 
