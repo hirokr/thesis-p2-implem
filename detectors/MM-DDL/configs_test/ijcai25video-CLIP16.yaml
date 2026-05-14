@@ -7,7 +7,7 @@ val_split: ['validation', ]
 model_name: "LocPointTransformer"
 loader: {
     batch_size: 64,
-    num_workers: 64,
+    num_workers: 20,
 }
 dataset: {
   # type of feature ( WAV2VEC2_BASE|WAVLM_BASE|WAV2VEC2_LARGE|WAVLM_LARGE|None)

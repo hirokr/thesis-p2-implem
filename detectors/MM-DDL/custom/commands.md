@@ -43,3 +43,5 @@ python detectors/MM-DDL/preprocess.py
 python detectors/MM-DDL/preprocess.py --base_dataset_folder C:\t309\dataSubsets
 python detectors/MM-DDL/preprocess.py --config detectors/MM-DDL/configs_test/ijcai25audio-wavLM.yaml --ckpt detectors/MM-DDL/ckpt/ijcai25audio-wavLM
 python detectors/MM-DDL/preprocess.py --device cuda:0
+
+python detectors/MM-DDL/preprocess.py --datasets faceavceleb --modalities video --max_items 10 --verbose --log_every 10 --device cuda:0

@@ -13,6 +13,7 @@ import torchvision
 import torch.nn as nn
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
+from torch.utils.data._utils.collate import default_collate
 from transformers import CLIPVisionModel, XCLIPVisionModel, AutoModel
 
 from .datasets import register_dataset
@@ -37,6 +38,48 @@ def _warn_if_lfs_pointer(path):
                 print(f"[WARN] LFS pointer detected at {path}. Run 'git lfs pull' in that folder.")
     except OSError:
         return
+
+
+def _normalize_rel_path(path_value, dataset_root):
+    if not path_value:
+        return ""
+    if os.path.isabs(path_value):
+        try:
+            return os.path.relpath(path_value, dataset_root)
+        except ValueError:
+            return os.path.basename(path_value)
+    return path_value
+
+
+def _needs_rebuild_dict_db(entries, dataset_root):
+    if not entries:
+        return True
+    sample = entries[0]
+    if "rel_path" not in sample or "video_path" not in sample:
+        return True
+    for item in entries[:5]:
+        rel_path = item.get("rel_path")
+        if not rel_path:
+            return True
+        if not os.path.exists(os.path.join(dataset_root, rel_path)):
+            return True
+    return False
+
+
+def _make_feature_path(cache_root, rel_path):
+    rel_path = rel_path.replace("\\", "/")
+    root, _ = os.path.splitext(rel_path)
+    root = root.replace(":", "")
+    feature_path = os.path.join(cache_root, f"{root}.npy")
+    os.makedirs(os.path.dirname(feature_path), exist_ok=True)
+    return feature_path
+
+
+def _collate_skip_none(batch):
+    batch = [item for item in batch if item is not None]
+    if not batch:
+        return None
+    return default_collate(batch)
 
 # 保存 dict_db 到 JSON 文件
 def save_dict_db_to_json(dict_db, file_path):
@@ -98,13 +141,17 @@ class WaveformDataset(Dataset):
 
     def __getitem__(self, idx):
         video_item = self.data_list[idx]
-        audio_path = os.path.join(self.dataset_root, video_item['id'])
+        audio_path = video_item.get("video_path") or os.path.join(self.dataset_root, video_item["id"])
+        try:
+            waveform, sample_rate = librosa.load(audio_path, sr=None, mono=True)
+        except Exception:
+            with open("audios.txt", "a") as f:
+                f.write(f"{audio_path}\n")
+            return None
 
-        # 加载音频
-        waveform, sample_rate = librosa.load(audio_path, sr=None, mono=True)
         waveform = torch.from_numpy(waveform)
         waveform = torchaudio.functional.resample(waveform, sample_rate, self.sample_rate)
-        return waveform, sample_rate, video_item['id']
+        return waveform, sample_rate, video_item["id"]
 
 
 class VideoFrameDataset(Dataset):
@@ -126,10 +173,14 @@ class VideoFrameDataset(Dataset):
 
     def __getitem__(self, idx):
         video_item = self.data_list[idx]
-        video_path = os.path.join(self.dataset_root, video_item['id'])
+        video_path = video_item.get("video_path") or os.path.join(self.dataset_root, video_item["id"])
+        cap = cv2.VideoCapture(video_path)
         try:
-            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                raise RuntimeError("Unable to open video")
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if total_frames <= 0:
+                return None
             frames = []
             for _ in range(total_frames):
                 ret, frame = cap.read()
@@ -140,13 +191,17 @@ class VideoFrameDataset(Dataset):
                 image = augmented["image"]
                 image = image.transpose(2, 0, 1)[np.newaxis, :]
                 frames.append(image)
-            cap.release()
+            if not frames:
+                return None
             frames = np.concatenate(frames, axis=0)
             frames = torch.tensor(frames).unsqueeze(0).squeeze(0)
-            return frames, video_item['id']
-        except:
-            with open('videos.txt','a') as f:
+            return frames, video_item["id"]
+        except Exception:
+            with open("videos.txt", "a") as f:
                 f.write(f"{video_path}\n")
+            return None
+        finally:
+            cap.release()
 
 @register_dataset("ijcai25testaudio")
 class IJCAI25testaudio(Dataset):
@@ -243,6 +298,9 @@ class IJCAI25testaudio(Dataset):
         if os.path.exists(db_path):
             _debug(f"[DEBUG] Using cached labels: {db_path}")
             dict_db = load_dict_db_from_json(db_path)
+            if not _needs_rebuild_dict_db(dict_db, self.dataset_root):
+                return dict_db
+            _debug("[DEBUG] Cached labels invalid; rebuilding.")
         else:
             _debug(f"[DEBUG] Scanning {len(file_paths)} videos for metadata")
             dict_db = []
@@ -263,11 +321,13 @@ class IJCAI25testaudio(Dataset):
                     duration = frame_count / fps
 
                 # 构造 video_id：可以是文件名，也可以是相对路径
-                video_id = os.path.basename(video_path)
+                rel_path = _normalize_rel_path(video_path, self.dataset_root)
 
                 # 构建样本字典，仅保留基本字段
                 dict_db.append({
-                    'id': video_id,
+                    'id': rel_path,
+                    'rel_path': rel_path,
+                    'video_path': video_path,
                     'fps': fps,
                     'duration': duration
                 })
@@ -294,12 +354,12 @@ class IJCAI25testaudio(Dataset):
 
     def _get_feature_path(self, video_id, modal):
         """生成特征文件的路径"""
-        basename = os.path.basename(video_id)
-        root, _ = os.path.splitext(basename)
         if modal == 'video':
-            return os.path.join(self.video_cache_dir, f"{root}.npy")
+            rel_path = _normalize_rel_path(video_id, self.dataset_root)
+            return _make_feature_path(self.video_cache_dir, rel_path)
         elif modal == 'audio':
-            return os.path.join(self.audio_cache_dir, f"{root}.npy")
+            rel_path = _normalize_rel_path(video_id, self.dataset_root)
+            return _make_feature_path(self.audio_cache_dir, rel_path)
 
 
     def get_attributes(self):
@@ -318,9 +378,18 @@ class IJCAI25testaudio(Dataset):
             ]
             _debug(f"[DEBUG] Video features pending: {len(filtered_data)}")
             dataset = VideoFrameDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
-            loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=self.num_workers, pin_memory=True,)
+            loader = DataLoader(
+                dataset,
+                batch_size=1,
+                shuffle=False,
+                num_workers=self.num_workers,
+                pin_memory=True,
+                collate_fn=_collate_skip_none,
+            )
             with torch.no_grad():
                 for batch in tqdm(loader, desc='Precomputing Features'):
+                    if batch is None:
+                        continue
                     frames, video_id = batch
                     feature_path = self._get_feature_path(video_id[0],modal=modal)
                     try:
@@ -357,9 +426,17 @@ class IJCAI25testaudio(Dataset):
             ]
             _debug(f"[DEBUG] Audio features pending: {len(filtered_data)}")
             dataset = WaveformDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
-            loader = DataLoader(dataset, batch_size=1, num_workers=self.num_workers, shuffle=False)
+            loader = DataLoader(
+                dataset,
+                batch_size=1,
+                num_workers=self.num_workers,
+                shuffle=False,
+                collate_fn=_collate_skip_none,
+            )
             with torch.inference_mode():
                 for batch in tqdm(loader, desc='Precomputing Features'):
+                    if batch is None:
+                        continue
                     waveform, sample_rate, audio_id = batch
                     feature_path = self._get_feature_path(audio_id[0],modal=modal)
                     waveform = waveform.to(self.device)
