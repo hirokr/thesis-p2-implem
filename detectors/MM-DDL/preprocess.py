@@ -30,7 +30,7 @@ from libs.utils import fix_random_seed
 
 
 DEFAULT_DATASET_FOLDER = r"C:\t309\dataSubset"
-DEFAULT_RESULTS_FILE = r"C:\t309\results\mm_dl\results.md"
+DEFAULT_RESULTS_FILE = r"C:\t309\results\mm_dl\result.md"
 
 
 def _load_json(path):
@@ -73,6 +73,52 @@ def _resolve_path(path_value, base_dir):
 def _replace_ext(path_value, new_ext):
     root, _ = os.path.splitext(path_value)
     return root + new_ext
+
+
+def _split_csv(value):
+    return [entry.strip() for entry in value.split(",") if entry.strip()]
+
+
+def _dataset_name_from_metadata(metadata_path):
+    filename = os.path.basename(metadata_path)
+    lower = filename.lower()
+    if lower == "metadata.json":
+        return os.path.basename(os.path.dirname(metadata_path))
+    if lower.endswith(".metadata.json"):
+        return filename[: -len(".metadata.json")]
+    return os.path.splitext(filename)[0]
+
+
+def _discover_metadata_files(base_folder, deep_search=False):
+    if not os.path.isdir(base_folder):
+        return []
+
+    def _is_metadata_file(name):
+        lower = name.lower()
+        return lower == "metadata.json" or lower.endswith(".metadata.json")
+
+    metadata_files = set()
+    entries = os.listdir(base_folder)
+    for entry in entries:
+        full = os.path.join(base_folder, entry)
+        if os.path.isfile(full) and _is_metadata_file(entry):
+            metadata_files.add(full)
+        elif os.path.isdir(full):
+            try:
+                for child in os.listdir(full):
+                    child_path = os.path.join(full, child)
+                    if os.path.isfile(child_path) and _is_metadata_file(child):
+                        metadata_files.add(child_path)
+            except OSError:
+                continue
+
+    if deep_search:
+        for root, _, files in os.walk(base_folder):
+            for file_name in files:
+                if _is_metadata_file(file_name):
+                    metadata_files.add(os.path.join(root, file_name))
+
+    return sorted(metadata_files)
 
 
 def _select_threshold(scores, labels, strategy, fixed_threshold):
@@ -193,6 +239,81 @@ def _load_completed_datasets(results_path):
     return completed
 
 
+def _label_from_row(row):
+    if "label" in row:
+        return _normalize_label(row.get("label"))
+    if "modify_type" in row:
+        return 0 if str(row.get("modify_type")).lower() == "real" else 1
+    if "type" in row:
+        return 0 if str(row.get("type")).lower() == "realvideo-realaudio" else 1
+    if "n_fakes" in row:
+        return 1 if row.get("n_fakes", 0) > 0 else 0
+    if "is_fake" in row:
+        return _normalize_label(row.get("is_fake"))
+    if "target" in row:
+        return _normalize_label(row.get("target"))
+    return None
+
+
+def _load_generic_list(metadata_path, split_filter=None, data=None):
+    items = []
+    if data is None:
+        data = _load_json(metadata_path)
+    if not isinstance(data, list):
+        return items, ""
+
+    paths = [
+        row.get("file") or row.get("path")
+        for row in data
+        if isinstance(row, dict) and (row.get("file") or row.get("path"))
+    ]
+    root = _guess_common_root(paths)
+
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        split = row.get("split")
+        if split_filter and split != split_filter:
+            continue
+        video_path = row.get("file") or row.get("path")
+        if not video_path:
+            continue
+        label = _label_from_row(row)
+        if label is None:
+            continue
+        rel_path = os.path.relpath(video_path, root) if root else os.path.basename(video_path)
+        items.append({"video_path": video_path, "label": label, "split": split, "rel_path": rel_path})
+
+    return items, root
+
+
+def _load_generic_map(metadata_path, dataset_root, split_filter=None, data=None):
+    items = []
+    if data is None:
+        data = _load_json(metadata_path)
+    if not isinstance(data, dict):
+        return items, dataset_root
+
+    for rel_path, info in data.items():
+        split = None
+        label = None
+        if isinstance(info, dict):
+            split = info.get("split")
+            label = _label_from_row(info)
+        else:
+            label = _normalize_label(info)
+        if split_filter and split != split_filter:
+            continue
+        if label is None:
+            continue
+        video_path = rel_path
+        if not os.path.isabs(video_path):
+            video_path = os.path.join(dataset_root, rel_path)
+        items.append({"video_path": video_path, "label": label, "split": split, "rel_path": rel_path})
+
+    return items, dataset_root
+
+
 def _load_av1m(metadata_path, split_filter=None):
     items = []
     data = _load_json(metadata_path)
@@ -280,6 +401,29 @@ def _load_dfdc(metadata_path, dataset_root, split_filter=None):
     return items, dataset_root
 
 
+def _load_metadata_items(metadata_path, dataset_key, args, split_filter=None):
+    key = dataset_key.lower()
+    if key in {"av1", "av1m"}:
+        return _load_av1m(metadata_path, split_filter)
+    if key in {"dfdc"}:
+        dataset_root = args.dfdc_root or os.path.dirname(metadata_path)
+        return _load_dfdc(metadata_path, dataset_root, split_filter)
+    if key in {"faceavceleb", "fakeavceleb"}:
+        return _load_fakeavceleb(metadata_path, split_filter)
+    if key in {"faceforensics", "faceforensics++", "faceforensics++_c23"}:
+        return _load_faceforensics(metadata_path, split_filter)
+    if key in {"lavdf", "lav-df"}:
+        return _load_lavdf(metadata_path, split_filter)
+
+    data = _load_json(metadata_path)
+    if isinstance(data, list):
+        return _load_generic_list(metadata_path, split_filter, data=data)
+    if isinstance(data, dict):
+        dataset_root = os.path.dirname(metadata_path)
+        return _load_generic_map(metadata_path, dataset_root, split_filter, data=data)
+    return [], ""
+
+
 def _resolve_ckpt(ckpt_path, epoch):
     if ckpt_path.endswith(".pth.tar"):
         if not os.path.exists(ckpt_path):
@@ -342,37 +486,101 @@ def _infer_scores(model, val_loader):
         with torch.no_grad():
             outputs = model(audio_list)
         for i, _ in enumerate(audio_list):
-            segments = outputs[i]["segments"].detach().cpu().numpy()
             segment_scores = outputs[i]["scores"].detach().cpu().numpy()
             max_score = 0.0 if len(segment_scores) == 0 else float(np.max(segment_scores))
             video_id = outputs[i]["video_id"]
-            scores[video_id] = {
-                "score": max_score,
-                "segment_count": len(segments),
-            }
+            scores[video_id] = max_score
     return scores
+
+
+def _item_key(item):
+    return item.get("rel_path") or os.path.basename(item["video_path"])
 
 
 def _prepare_label_map(items):
     label_map = {}
     collisions = set()
     for item in items:
-        basename = os.path.basename(item["video_path"])
-        if basename in label_map:
-            collisions.add(basename)
+        key = _item_key(item)
+        if key in label_map:
+            collisions.add(key)
             continue
-        label_map[basename] = item["label"]
+        label_map[key] = item["label"]
     return label_map, collisions
+
+
+def _lookup_prediction(predictions, item, key):
+    if key in predictions:
+        return predictions[key]
+    basename = os.path.basename(item["video_path"])
+    if basename in predictions:
+        return predictions[basename]
+    video_path = item["video_path"]
+    if video_path in predictions:
+        return predictions[video_path]
+    return None
+
+
+def _evaluate_predictions(dataset_name, items, predictions, args, run_name):
+    if not predictions:
+        print(f"[WARN] No predictions available for dataset '{dataset_name}'.")
+        return None
+
+    label_map, collisions = _prepare_label_map(items)
+    if collisions:
+        print(f"[WARN] {len(collisions)} duplicate sample keys in '{dataset_name}', skipping those labels.")
+
+    matched_scores = []
+    matched_labels = []
+    missing = 0
+    for item in items:
+        key = _item_key(item)
+        if key in collisions:
+            continue
+        score = _lookup_prediction(predictions, item, key)
+        if score is None:
+            missing += 1
+            continue
+        matched_scores.append(score)
+        matched_labels.append(label_map[key])
+
+    if not matched_scores:
+        print(f"[WARN] No matched predictions for dataset '{dataset_name}'.")
+        return None
+
+    scores = np.array(matched_scores, dtype=np.float64)
+    labels = np.array(matched_labels, dtype=np.int32)
+    threshold = _select_threshold(scores, labels, args.threshold_strategy, args.threshold)
+    metrics = _compute_metrics(scores, labels, threshold)
+    result_name = f"{dataset_name}:{run_name}" if run_name else dataset_name
+    _append_results(args.results_file, result_name, metrics, threshold, len(labels), args.threshold_strategy)
+
+    if missing > 0:
+        print(f"[WARN] Missing predictions for {missing} samples in '{dataset_name}'.")
+    return metrics
+
+
+def _merge_predictions(first, second, strategy):
+    merged = {}
+    keys = set(first.keys()) | set(second.keys())
+    for key in keys:
+        score_a = first.get(key)
+        score_b = second.get(key)
+        if score_a is None:
+            merged[key] = score_b
+        elif score_b is None:
+            merged[key] = score_a
+        elif strategy == "avg":
+            merged[key] = float(score_a + score_b) / 2.0
+        else:
+            merged[key] = max(score_a, score_b)
+    return merged
 
 
 def _evaluate_dataset(dataset_name, items, dataset_root, run_config, run_ckpt, run_epoch, run_name, args):
     if not items:
         print(f"[WARN] No items for dataset '{dataset_name}'.")
-        return
-
-    label_map, collisions = _prepare_label_map(items)
-    if collisions:
-        print(f"[WARN] {len(collisions)} duplicate basenames in '{dataset_name}', skipping those labels.")
+        return None
 
     _clear_cached_data()
 
@@ -389,45 +597,21 @@ def _evaluate_dataset(dataset_name, items, dataset_root, run_config, run_ckpt, r
     model, val_loader = _load_model_and_loader(cfg, ckpt_file)
     predictions = _infer_scores(model, val_loader)
 
-    matched_scores = []
-    matched_labels = []
-    missing = 0
-    for item in items:
-        basename = os.path.basename(item["video_path"])
-        if basename in collisions:
-            continue
-        pred = predictions.get(basename)
-        if pred is None:
-            missing += 1
-            continue
-        matched_scores.append(pred["score"])
-        matched_labels.append(item["label"])
-
-    if not matched_scores:
-        print(f"[WARN] No matched predictions for dataset '{dataset_name}'.")
-        return
-
-    scores = np.array(matched_scores, dtype=np.float64)
-    labels = np.array(matched_labels, dtype=np.int32)
-    threshold = _select_threshold(scores, labels, args.threshold_strategy, args.threshold)
-    metrics = _compute_metrics(scores, labels, threshold)
-    result_name = f"{dataset_name}:{run_name}" if run_name else dataset_name
-    _append_results(args.results_file, result_name, metrics, threshold, len(labels), args.threshold_strategy)
-
-    if missing > 0:
-        print(f"[WARN] Missing predictions for {missing} samples in '{dataset_name}'.")
+    _evaluate_predictions(dataset_name, items, predictions, args, run_name)
+    return predictions
 
 
 def _collect_missing_inputs(config_path, ckpt_path):
     missing = []
-    if not os.path.exists(config_path):
+    if config_path and not os.path.exists(config_path):
         missing.append(f"Config not found: {config_path}")
-    if ckpt_path.endswith(".pth.tar"):
-        if not os.path.exists(ckpt_path):
-            missing.append(f"Checkpoint not found: {ckpt_path}")
-    else:
-        if not os.path.isdir(ckpt_path):
-            missing.append(f"Checkpoint folder not found: {ckpt_path}")
+    if ckpt_path:
+        if ckpt_path.endswith(".pth.tar"):
+            if not os.path.exists(ckpt_path):
+                missing.append(f"Checkpoint not found: {ckpt_path}")
+        else:
+            if not os.path.isdir(ckpt_path):
+                missing.append(f"Checkpoint folder not found: {ckpt_path}")
     return missing
 
 
@@ -436,12 +620,37 @@ def main():
     parser = argparse.ArgumentParser(description="Run MM-DDL evaluation across datasets")
     parser.add_argument("--base_dataset_folder", default=DEFAULT_DATASET_FOLDER, help="Folder with metadata JSON files")
     parser.add_argument("--results_file", default=DEFAULT_RESULTS_FILE, help="Path to append results markdown")
-    parser.add_argument("--datasets", default="av1,dfdc,faceavceleb,faceforensics,lavdf", help="Comma list of datasets to run")
+    parser.add_argument("--datasets", default="auto", help="Comma list of datasets to run, or 'auto' to use all metadata files")
+    parser.add_argument("--deep_search", action="store_true", help="Recursively search for metadata.json files")
+    parser.add_argument("--modalities", default="audio,video,combined", help="Comma list of modalities to evaluate")
+    parser.add_argument("--combine_strategy", choices=["max", "avg"], default="max", help="How to merge audio/video scores")
     parser.add_argument("--split", default=None, help="Optional split filter (e.g., train, val, test)")
     parser.add_argument("--dfdc_root", default=r"C:\t309\dataset\dfdc", help="Root folder for DFDC videos")
-    parser.add_argument("--config", default="configs_test/ijcai25video-CLIP16.yaml", help="MM-DDL test config")
-    parser.add_argument("--ckpt", default="ckpt/ijcai25video-CLIP16", help="Checkpoint file or folder")
-    parser.add_argument("--epoch", type=int, default=-1, help="Checkpoint epoch (folder mode)")
+    parser.add_argument("--audio_config", default="configs_test/ijcai25audio-wavLM.yaml", help="Audio test config")
+    parser.add_argument("--audio_ckpt", default="ckpt/ijcai25audio-wavLM", help="Audio checkpoint file or folder")
+    parser.add_argument("--audio_epoch", type=int, default=-1, help="Audio checkpoint epoch (folder mode)")
+    parser.add_argument(
+        "--config",
+        "--video_config",
+        dest="video_config",
+        default="configs_test/ijcai25video-CLIP16.yaml",
+        help="Video test config",
+    )
+    parser.add_argument(
+        "--ckpt",
+        "--video_ckpt",
+        dest="video_ckpt",
+        default="ckpt/ijcai25video-CLIP16",
+        help="Video checkpoint file or folder",
+    )
+    parser.add_argument(
+        "--epoch",
+        "--video_epoch",
+        dest="video_epoch",
+        type=int,
+        default=-1,
+        help="Video checkpoint epoch (folder mode)",
+    )
     parser.add_argument("--configs", default=None, help="Comma list of configs for multi-run")
     parser.add_argument("--ckpts", default=None, help="Comma list of checkpoints for multi-run")
     parser.add_argument("--epochs", default=None, help="Comma list of epochs for multi-run")
@@ -461,32 +670,33 @@ def main():
     args.base_dataset_folder = _resolve_path(args.base_dataset_folder, PROJECT_ROOT)
     args.results_file = _resolve_path(args.results_file, PROJECT_ROOT)
     args.dfdc_root = _resolve_path(args.dfdc_root, PROJECT_ROOT)
-    args.config = _resolve_path(args.config, PROJECT_ROOT)
-    args.ckpt = _resolve_path(args.ckpt, PROJECT_ROOT)
+    args.audio_config = _resolve_path(args.audio_config, PROJECT_ROOT)
+    args.audio_ckpt = _resolve_path(args.audio_ckpt, PROJECT_ROOT)
+    args.video_config = _resolve_path(args.video_config, PROJECT_ROOT)
+    args.video_ckpt = _resolve_path(args.video_ckpt, PROJECT_ROOT)
 
-    dataset_map = {
-        "av1": os.path.join(args.base_dataset_folder, "av1.metadata.json"),
-        "dfdc": os.path.join(args.base_dataset_folder, "dfdc.metadata.json"),
-        "faceavceleb": os.path.join(args.base_dataset_folder, "faceavceleb.metadata.json"),
-        "faceforensics": os.path.join(args.base_dataset_folder, "faceforensics.metadata.json"),
-        "lavdf": os.path.join(args.base_dataset_folder, "lavdf.metadata.json"),
-    }
-
-    selected = [name.strip() for name in args.datasets.split(",") if name.strip()]
-
-    def _split_csv(value):
-        return [entry.strip() for entry in value.split(",") if entry.strip()]
+    modalities = [entry.lower() for entry in _split_csv(args.modalities or "")]
 
     if args.configs or args.ckpts or args.epochs or args.names:
-        configs = _split_csv(args.configs or "") or [args.config]
-        ckpts = _split_csv(args.ckpts or "") or [args.ckpt]
-        epochs = _split_csv(args.epochs or "") or [str(args.epoch)]
+        configs = _split_csv(args.configs or "") or [args.video_config]
+        ckpts = _split_csv(args.ckpts or "") or [args.video_ckpt]
+        epochs = _split_csv(args.epochs or "") or [str(args.video_epoch)]
         names = _split_csv(args.names or "") or [""]
     else:
-        configs = [args.config]
-        ckpts = [args.ckpt]
-        epochs = [str(args.epoch)]
-        names = [""]
+        configs = []
+        ckpts = []
+        epochs = []
+        names = []
+        if "audio" in modalities:
+            configs.append(args.audio_config)
+            ckpts.append(args.audio_ckpt)
+            epochs.append(str(args.audio_epoch))
+            names.append("audio")
+        if "video" in modalities:
+            configs.append(args.video_config)
+            ckpts.append(args.video_ckpt)
+            epochs.append(str(args.video_epoch))
+            names.append("video")
 
     if len(epochs) == 1 and len(configs) > 1:
         epochs = epochs * len(configs)
@@ -503,9 +713,42 @@ def main():
         resolved_ckpt = _resolve_path(ckpt_path, PROJECT_ROOT)
         runs.append((resolved_config, resolved_ckpt, int(epoch_value), run_name))
 
+    if not runs:
+        print("[WARN] No runs configured. Check --modalities or --configs.")
+        return
+
     missing = []
     for resolved_config, resolved_ckpt, _, _ in runs:
         missing.extend(_collect_missing_inputs(resolved_config, resolved_ckpt))
+
+    metadata_files = _discover_metadata_files(args.base_dataset_folder, args.deep_search)
+    metadata_entries = []
+    for path in metadata_files:
+        dataset_name = _dataset_name_from_metadata(path)
+        dataset_key = dataset_name.strip().lower()
+        metadata_entries.append({"name": dataset_name, "key": dataset_key, "path": path})
+
+    key_counts = {}
+    for entry in metadata_entries:
+        key_counts[entry["key"]] = key_counts.get(entry["key"], 0) + 1
+    for entry in metadata_entries:
+        if key_counts[entry["key"]] > 1:
+            parent = os.path.basename(os.path.dirname(entry["path"]))
+            entry["key"] = f"{entry['key']}_{parent.lower()}"
+            entry["name"] = f"{entry['name']}-{parent}"
+
+    if args.datasets.strip().lower() in {"auto", "all", "*"}:
+        selected_entries = metadata_entries
+        missing_datasets = set()
+    else:
+        requested = {entry.lower() for entry in _split_csv(args.datasets)}
+        selected_entries = [
+            entry
+            for entry in metadata_entries
+            if entry["key"] in requested or entry["name"].lower() in requested
+        ]
+        selected_keys = {entry["key"] for entry in selected_entries}
+        missing_datasets = requested - selected_keys
     if args.dry_run:
         if args.dry_run_write_results and not missing:
             _ensure_results_header(args.results_file)
@@ -516,50 +759,73 @@ def main():
                 print(f"  - {entry}")
         else:
             print("[DRY RUN] All required files found.")
-        print(f"[DRY RUN] Selected datasets: {', '.join(selected)}")
+        if missing_datasets:
+            print(f"[DRY RUN] Unknown datasets: {', '.join(sorted(missing_datasets))}")
+        selected_names = ", ".join(entry["key"] for entry in selected_entries) or "none"
+        print(f"[DRY RUN] Selected datasets: {selected_names}")
+        print(f"[DRY RUN] Modalities: {', '.join(modalities) or 'none'}")
         return
 
     if missing:
         raise FileNotFoundError("\n".join(missing))
 
+    if missing_datasets:
+        print(f"[WARN] Unknown datasets: {', '.join(sorted(missing_datasets))}")
+
+    if not selected_entries:
+        print(f"[WARN] No metadata files found under {args.base_dataset_folder}.")
+        return
+
+    _ensure_results_header(args.results_file)
+
     completed = _load_completed_datasets(args.results_file)
-    for run_config, run_ckpt, run_epoch, run_name in runs:
-        for dataset_name in selected:
-            dataset_key = dataset_name.lower()
+    for entry in selected_entries:
+        dataset_key = entry["key"]
+        metadata_path = entry["path"]
+        if not os.path.exists(metadata_path):
+            print(f"[WARN] Metadata not found for '{dataset_key}': {metadata_path}")
+            continue
+
+        items, root = _load_metadata_items(metadata_path, dataset_key, args, args.split)
+        if not items:
+            print(f"[WARN] No items for dataset '{dataset_key}'.")
+            continue
+
+        if args.max_items:
+            items = items[: args.max_items]
+
+        dataset_root = root or os.path.dirname(items[0]["video_path"])
+        predictions_by_name = {}
+
+        for run_config, run_ckpt, run_epoch, run_name in runs:
+            run_key = (run_name or dataset_key).lower()
             result_key = f"{dataset_key}:{run_name}" if run_name else dataset_key
-            if result_key in completed:
+            if result_key.lower() in completed:
                 print(f"[SKIP] Results already recorded for '{result_key}' in {args.results_file}.")
                 continue
-            if dataset_key not in dataset_map:
-                print(f"[WARN] Unknown dataset '{dataset_name}', skipping.")
-                continue
-            metadata_path = dataset_map[dataset_key]
-            if not os.path.exists(metadata_path):
-                print(f"[WARN] Metadata not found for '{dataset_name}': {metadata_path}")
-                continue
+            predictions = _evaluate_dataset(
+                dataset_key,
+                items,
+                dataset_root,
+                run_config,
+                run_ckpt,
+                run_epoch,
+                run_name,
+                args,
+            )
+            if predictions:
+                predictions_by_name[run_key] = predictions
 
-            if dataset_key == "av1":
-                items, root = _load_av1m(metadata_path, args.split)
-            elif dataset_key == "dfdc":
-                items, root = _load_dfdc(metadata_path, args.dfdc_root, args.split)
-            elif dataset_key == "faceavceleb":
-                items, root = _load_fakeavceleb(metadata_path, args.split)
-            elif dataset_key == "faceforensics":
-                items, root = _load_faceforensics(metadata_path, args.split)
-            elif dataset_key == "lavdf":
-                items, root = _load_lavdf(metadata_path, args.split)
-            else:
-                items, root = [], ""
-
-            if not items:
-                print(f"[WARN] No items for dataset '{dataset_name}'.")
-                continue
-
-            if args.max_items:
-                items = items[: args.max_items]
-
-            dataset_root = root or os.path.dirname(items[0]["video_path"])
-            _evaluate_dataset(dataset_key, items, dataset_root, run_config, run_ckpt, run_epoch, run_name, args)
+        if "combined" in modalities:
+            audio_pred = predictions_by_name.get("audio")
+            video_pred = predictions_by_name.get("video")
+            if audio_pred and video_pred:
+                combined_key = f"{dataset_key}:combined"
+                if combined_key.lower() in completed:
+                    print(f"[SKIP] Results already recorded for '{combined_key}' in {args.results_file}.")
+                else:
+                    merged = _merge_predictions(audio_pred, video_pred, args.combine_strategy)
+                    _evaluate_predictions(dataset_key, items, merged, args, "combined")
 
 
 if __name__ == "__main__":
