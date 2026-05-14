@@ -40,11 +40,21 @@ Transformers = [
 
 def choose_CLIP_model(clip_model):
     weights_root = Path(__file__).resolve().parents[2] / ".weights"
+    def _load_model(model_cls, model_dir, model_name):
+        try:
+            return model_cls.from_pretrained(str(model_dir))
+        except Exception as exc:
+            message = str(exc).lower()
+            if "safetensor" in message or "headertoolarge" in message:
+                print(f"[WARN] {model_name} safetensors load failed; retrying with pytorch weights.")
+                return model_cls.from_pretrained(str(model_dir), use_safetensors=False)
+            raise
+
     match clip_model:
         case 'CLIP-16':
-            return CLIPVisionModel.from_pretrained(str(weights_root / "clip-vit-base-patch16"))
+            return _load_model(CLIPVisionModel, weights_root / "clip-vit-base-patch16", "CLIP-16")
         case 'XCLIP-16':
-            return XCLIPVisionModel.from_pretrained(str(weights_root / "xclip-base-patch16"))
+            return _load_model(XCLIPVisionModel, weights_root / "xclip-base-patch16", "XCLIP-16")
 
 
 def pad_tensor_to_multiple_of_8(x):

@@ -165,14 +165,14 @@ def _update_config(config):
     return config
 
 def load_config(config_file, defaults=DEFAULTS):
-    with open(config_file, "r") as fd:
+    with open(config_file, "r", encoding="utf-8-sig") as fd:
         config = yaml.load(fd, Loader=yaml.FullLoader)
     _merge(defaults, config)
     config = _update_config(config)
     return config
 
 def load_config_without_merge(config_file):
-    with open(config_file, "r") as fd:
+    with open(config_file, "r", encoding="utf-8-sig") as fd:
         config = yaml.load(fd, Loader=yaml.FullLoader)
     config = _update_config(config)
     return config

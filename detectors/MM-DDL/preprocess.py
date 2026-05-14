@@ -79,6 +79,11 @@ def _split_csv(value):
     return [entry.strip() for entry in value.split(",") if entry.strip()]
 
 
+def _log(args, message):
+    if getattr(args, "verbose", False):
+        print(message)
+
+
 def _dataset_name_from_metadata(metadata_path):
     filename = os.path.basename(metadata_path)
     lower = filename.lower()
@@ -480,9 +485,16 @@ def _load_model_and_loader(cfg, ckpt_file):
     return model, val_loader
 
 
-def _infer_scores(model, val_loader):
+def _infer_scores(model, val_loader, args, dataset_name, run_name):
     scores = {}
-    for audio_list in val_loader:
+    total_batches = None
+    try:
+        total_batches = len(val_loader)
+    except TypeError:
+        total_batches = None
+
+    processed = 0
+    for batch_idx, audio_list in enumerate(val_loader, start=1):
         with torch.no_grad():
             outputs = model(audio_list)
         for i, _ in enumerate(audio_list):
@@ -490,6 +502,16 @@ def _infer_scores(model, val_loader):
             max_score = 0.0 if len(segment_scores) == 0 else float(np.max(segment_scores))
             video_id = outputs[i]["video_id"]
             scores[video_id] = max_score
+            processed += 1
+
+        if getattr(args, "verbose", False):
+            log_every = max(1, int(getattr(args, "log_every", 25)))
+            if batch_idx == 1 or batch_idx % log_every == 0:
+                run_tag = f"{dataset_name}:{run_name}" if run_name else dataset_name
+                if total_batches:
+                    print(f"[INFO] {run_tag} batch {batch_idx}/{total_batches} (items={processed})")
+                else:
+                    print(f"[INFO] {run_tag} batch {batch_idx} (items={processed})")
     return scores
 
 
@@ -585,6 +607,9 @@ def _evaluate_dataset(dataset_name, items, dataset_root, run_config, run_ckpt, r
     _clear_cached_data()
 
     cfg = load_config_without_merge(run_config)
+    _log(args, f"[INFO] Dataset '{dataset_name}' items={len(items)} root={dataset_root}")
+    _log(args, f"[INFO] Config={run_config}")
+    _log(args, f"[INFO] Checkpoint={run_ckpt} epoch={run_epoch}")
     cfg["dataset"]["dataset_root"] = dataset_root
     if args.device:
         cfg["devices"] = [args.device]
@@ -592,10 +617,11 @@ def _evaluate_dataset(dataset_name, items, dataset_root, run_config, run_ckpt, r
     cfg["loader"]["num_workers"] *= len(cfg["devices"])
     cfg["dataset"]["devices"] = cfg["devices"]
     cfg["dataset"]["num_workers"] = cfg["loader"]["num_workers"]
+    _log(args, f"[INFO] Devices={cfg['devices']} num_workers={cfg['loader']['num_workers']}")
 
     ckpt_file = _resolve_ckpt(run_ckpt, run_epoch)
     model, val_loader = _load_model_and_loader(cfg, ckpt_file)
-    predictions = _infer_scores(model, val_loader)
+    predictions = _infer_scores(model, val_loader, args, dataset_name, run_name)
 
     _evaluate_predictions(dataset_name, items, predictions, args, run_name)
     return predictions
@@ -659,6 +685,8 @@ def main():
     parser.add_argument("--threshold_strategy", choices=["fixed", "youden", "f1"], default="f1", help="Threshold strategy")
     parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for fixed strategy")
     parser.add_argument("--dry_run", action="store_true", help="Validate inputs and exit without processing")
+    parser.add_argument("--verbose", action="store_true", help="Verbose logging")
+    parser.add_argument("--log_every", type=int, default=25, help="Log every N batches when verbose")
     parser.add_argument(
         "--dry_run_write_results",
         action="store_true",
