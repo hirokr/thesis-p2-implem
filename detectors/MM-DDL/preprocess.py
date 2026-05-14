@@ -704,6 +704,8 @@ def main():
     args.video_ckpt = _resolve_path(args.video_ckpt, PROJECT_ROOT)
 
     modalities = [entry.lower() for entry in _split_csv(args.modalities or "")]
+    _log(args, f"[INFO] Base dataset folder: {args.base_dataset_folder}")
+    _log(args, f"[INFO] Modalities: {', '.join(modalities) or 'none'}")
 
     if args.configs or args.ckpts or args.epochs or args.names:
         configs = _split_csv(args.configs or "") or [args.video_config]
@@ -740,6 +742,7 @@ def main():
         resolved_config = _resolve_path(config_path, PROJECT_ROOT)
         resolved_ckpt = _resolve_path(ckpt_path, PROJECT_ROOT)
         runs.append((resolved_config, resolved_ckpt, int(epoch_value), run_name))
+        _log(args, f"[INFO] Run config={resolved_config} ckpt={resolved_ckpt} epoch={epoch_value} name={run_name}")
 
     if not runs:
         print("[WARN] No runs configured. Check --modalities or --configs.")
@@ -750,6 +753,7 @@ def main():
         missing.extend(_collect_missing_inputs(resolved_config, resolved_ckpt))
 
     metadata_files = _discover_metadata_files(args.base_dataset_folder, args.deep_search)
+    _log(args, f"[INFO] Discovered {len(metadata_files)} metadata files")
     metadata_entries = []
     for path in metadata_files:
         dataset_name = _dataset_name_from_metadata(path)
@@ -818,6 +822,7 @@ def main():
         if not items:
             print(f"[WARN] No items for dataset '{dataset_key}'.")
             continue
+        _log(args, f"[INFO] Dataset '{dataset_key}' loaded {len(items)} items")
 
         if args.max_items:
             items = items[: args.max_items]

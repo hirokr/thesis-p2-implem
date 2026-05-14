@@ -22,6 +22,22 @@ import json
 
 CACHE_ROOT = Path(__file__).resolve().parents[2] / ".cached_data" / "test"
 
+
+def _debug(message):
+    if os.getenv("MMDDL_DEBUG", "0") == "1":
+        print(message)
+
+
+def _warn_if_lfs_pointer(path):
+    try:
+        if path.exists():
+            with path.open("rb") as handle:
+                head = handle.read(64)
+            if head.startswith(b"version https://git-lfs.github.com/spec/v1"):
+                print(f"[WARN] LFS pointer detected at {path}. Run 'git lfs pull' in that folder.")
+    except OSError:
+        return
+
 # 保存 dict_db 到 JSON 文件
 def save_dict_db_to_json(dict_db, file_path):
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -41,6 +57,9 @@ Transformers = [
 def choose_CLIP_model(clip_model):
     weights_root = Path(__file__).resolve().parents[2] / ".weights"
     def _load_model(model_cls, model_dir, model_name):
+        _debug(f"[DEBUG] Loading {model_name} from {model_dir}")
+        _warn_if_lfs_pointer(model_dir / "model.safetensors")
+        _warn_if_lfs_pointer(model_dir / "pytorch_model.bin")
         try:
             return model_cls.from_pretrained(str(model_dir))
         except Exception as exc:
@@ -167,8 +186,10 @@ class IJCAI25testaudio(Dataset):
 
         # 读取数据集信息，并存储为list
         self.dataset_root = dataset_root
+        _debug(f"[DEBUG] Dataset root: {self.dataset_root}")
         dict_db = self._load_label_db()
         self.data_list = dict_db
+        _debug(f"[DEBUG] Loaded {len(self.data_list)} items")
         self.device = torch.device(devices[0])
         self.num_workers = num_workers
 
@@ -189,6 +210,8 @@ class IJCAI25testaudio(Dataset):
         self.make_cache_dir(self.video_cache_dir)
         self.audio_cache_dir = os.path.join(str(CACHE_ROOT), f'ijcai25_{ssl_model}_feat_{self.featureMapIndex}')
         self.make_cache_dir(self.audio_cache_dir)
+        _debug(f"[DEBUG] Video cache: {self.video_cache_dir}")
+        _debug(f"[DEBUG] Audio cache: {self.audio_cache_dir}")
 
         # 检查是否需要预计算特征
         self.video_need_precompute = any(
@@ -199,6 +222,7 @@ class IJCAI25testaudio(Dataset):
             not os.path.exists(self._get_feature_path(video_item['id'],modal='audio'))
             for video_item in self.data_list
         )
+        _debug(f"[DEBUG] Precompute video: {self.video_need_precompute}, audio: {self.audio_need_precompute}")
 
         # 预计算特征（仅在需要时执行）
         if self.video_need_precompute and clip_model is not None:
@@ -217,8 +241,10 @@ class IJCAI25testaudio(Dataset):
                     file_paths.append(os.path.join(root, file))
         db_path = os.path.join(str(CACHE_ROOT), 'dict_db.json')
         if os.path.exists(db_path):
+            _debug(f"[DEBUG] Using cached labels: {db_path}")
             dict_db = load_dict_db_from_json(db_path)
         else:
+            _debug(f"[DEBUG] Scanning {len(file_paths)} videos for metadata")
             dict_db = []
             for video_path in tqdm(file_paths, desc='Loading Dataset'):
                 cap = cv2.VideoCapture(video_path)
@@ -246,6 +272,7 @@ class IJCAI25testaudio(Dataset):
                     'duration': duration
                 })
             save_dict_db_to_json(dict_db,db_path)
+            _debug(f"[DEBUG] Saved labels: {db_path}")
 
         return dict_db
 
@@ -282,12 +309,14 @@ class IJCAI25testaudio(Dataset):
     def _precompute_features(self, modal):
         """无填充的特征预计算"""
         if modal == 'video':
+            _debug("[DEBUG] Precomputing video features")
             self.model = choose_CLIP_model(self.clip_model)
             self.model.eval().to(self.device)
             filtered_data = [
                 item for item in self.data_list
                 if not os.path.exists(self._get_feature_path(item['id'],modal=modal))
             ]
+            _debug(f"[DEBUG] Video features pending: {len(filtered_data)}")
             dataset = VideoFrameDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
             loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=self.num_workers, pin_memory=True,)
             with torch.no_grad():
@@ -315,8 +344,10 @@ class IJCAI25testaudio(Dataset):
                             print(f"GPU memory is insufficient for {video_id[0]}\n")
             self.model.cpu()
             del self.model
+            _debug("[DEBUG] Video feature precompute done")
 
         elif modal == 'audio':
+            _debug("[DEBUG] Precomputing audio features")
             self.model = self.bundle.get_model()
             self.model.eval().to(self.device)
             # 先过滤掉已经生成特征的视频项
@@ -324,6 +355,7 @@ class IJCAI25testaudio(Dataset):
                 item for item in self.data_list
                 if not os.path.exists(self._get_feature_path(item['id'],modal=modal))
             ]
+            _debug(f"[DEBUG] Audio features pending: {len(filtered_data)}")
             dataset = WaveformDataset(filtered_data, dataset_root = self.dataset_root, sample_rate = self.bundle.sample_rate)
             loader = DataLoader(dataset, batch_size=1, num_workers=self.num_workers, shuffle=False)
             with torch.inference_mode():
@@ -337,6 +369,7 @@ class IJCAI25testaudio(Dataset):
                     np.save(feature_path, feats.cpu().numpy().astype(np.float32))
             self.model.cpu()
             del self.model
+            _debug("[DEBUG] Audio feature precompute done")
 
 
     def __len__(self):
