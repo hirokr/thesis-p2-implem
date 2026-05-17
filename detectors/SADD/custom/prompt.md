@@ -10,4 +10,9 @@ additional command: if one file is preprocessed then it should be saved and not 
 env: `conda activate sadd`
 add a `--dry_run`  flag to check that this pipeline works for every dataset. this flag should run only 10 videos per datasets
 
+conda activate sadd
+python detectors/SADD/custom/run_all_datasets.py --dataset all --dry_run
+
+python detectors/SADD/custom/run_all_datasets.py --dataset av1 --device gpu --checkpoint C:\t309\detectors\SADD\.weights\model_best_epoch50.pth.tar
+
 

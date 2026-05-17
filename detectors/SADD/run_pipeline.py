@@ -16,6 +16,15 @@ from scipy import signal
 from detectors import S3FD
 
 
+def run_ffmpeg(args):
+    completed = subprocess.run(["ffmpeg", *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "ffmpeg failed with exit code %s\nCOMMAND: %s\nSTDOUT:\n%s\nSTDERR:\n%s"
+            % (completed.returncode, " ".join(["ffmpeg", *args]), completed.stdout, completed.stderr)
+        )
+
+
 def bb_intersection_over_union(boxA, boxB):
     xA = max(boxA[0], boxB[0])
     yA = max(boxA[1], boxB[1])
@@ -130,24 +139,33 @@ def crop_video(track, cropfile, crop_face=True):
 
     # ========== CROP AUDIO FILE ==========
 
-    command = ("ffmpeg -y -i %s -ss %.3f -to %.3f %s" % (
-        os.path.join(avi_dir, reference, 'audio.wav'), audiostart, audioend, audiotmp))
-    output = subprocess.call(command, shell=True, stdout=None)
-
-    # print(output)
-
-    # if output != 0:
-    #   pdb.set_trace()
+    run_ffmpeg([
+        '-y',
+        '-i',
+        os.path.join(avi_dir, reference, 'audio.wav'),
+        '-ss',
+        '%.3f' % audiostart,
+        '-to',
+        '%.3f' % audioend,
+        audiotmp,
+    ])
 
     sample_rate, audio = wavfile.read(audiotmp)
 
     # ========== COMBINE AUDIO AND VIDEO FILES ==========
 
-    command = ("ffmpeg -y -i %st.avi -i %s -c:v copy -c:a copy %s.avi" % (cropfile, audiotmp, cropfile))
-    output = subprocess.call(command, shell=True, stdout=None)
-
-    # if output != 0:
-    #   pdb.set_trace()
+    run_ffmpeg([
+        '-y',
+        '-i',
+        cropfile + 't.avi',
+        '-i',
+        audiotmp,
+        '-c:v',
+        'copy',
+        '-c:a',
+        'copy',
+        cropfile + '.avi',
+    ])
 
     print('Written %s' % cropfile)
 
@@ -184,9 +202,10 @@ def inference_video():
             dets[-1].append({'frame': fidx, 'bbox': (bbox[:-1]).tolist(), 'conf': bbox[-1]})
 
         elapsed_time = time.time() - start_time
+        hz = (1 / elapsed_time) if elapsed_time > 0 else float('inf')
 
         print('%s-%05d; %d dets; %.2f Hz' % (
-            os.path.join(avi_dir, reference, 'video.avi'), fidx, len(dets[-1]), (1 / elapsed_time)))
+            os.path.join(avi_dir, reference, 'video.avi'), fidx, len(dets[-1]), hz))
 
     savepath = os.path.join(work_dir, reference, 'faces.pckl')
 
@@ -309,17 +328,45 @@ def run_pipeline(arg_data_dir, arg_videofile, arg_reference, label, crop_face=Tr
     # -f image2 will extract frames from video
     # third command extracts audio from video
 
-    command = ("ffmpeg -y -i %s -qscale:v 2 -async 1 -r 30 %s" % (
-        videofile, os.path.join(avi_dir, reference, 'video.avi')))
-    output = subprocess.call(command, shell=True, stdout=None)
+    run_ffmpeg([
+        '-y',
+        '-i',
+        videofile,
+        '-qscale:v',
+        '2',
+        '-async',
+        '1',
+        '-r',
+        '30',
+        os.path.join(avi_dir, reference, 'video.avi'),
+    ])
 
-    command = ("ffmpeg -y -i %s -qscale:v 2 -threads 1 -f image2 %s" % (
-        os.path.join(avi_dir, reference, 'video.avi'), os.path.join(frames_dir, reference, '%06d.jpg')))
-    output = subprocess.call(command, shell=True, stdout=None)
+    run_ffmpeg([
+        '-y',
+        '-i',
+        os.path.join(avi_dir, reference, 'video.avi'),
+        '-qscale:v',
+        '2',
+        '-threads',
+        '1',
+        '-f',
+        'image2',
+        os.path.join(frames_dir, reference, '%06d.jpg'),
+    ])
 
-    command = ("ffmpeg -y -i %s -ac 1 -vn -acodec pcm_s16le -ar 48000 %s" % (
-        os.path.join(avi_dir, reference, 'video.avi'), os.path.join(avi_dir, reference, 'audio.wav')))
-    output = subprocess.call(command, shell=True, stdout=None)
+    run_ffmpeg([
+        '-y',
+        '-i',
+        os.path.join(avi_dir, reference, 'video.avi'),
+        '-ac',
+        '1',
+        '-vn',
+        '-acodec',
+        'pcm_s16le',
+        '-ar',
+        '48000',
+        os.path.join(avi_dir, reference, 'audio.wav'),
+    ])
 
     # ========== FACE DETECTION ==========
 
