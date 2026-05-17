@@ -1,5 +1,7 @@
 import argparse
+import json
 import os
+import random
 import subprocess
 import sys
 import shutil
@@ -7,7 +9,7 @@ import tempfile
 from datetime import datetime
 import pickle
 import numpy as np
-from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve, roc_curve, precision_score, recall_score, f1_score, accuracy_score
+from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve, precision_score, recall_score, f1_score, accuracy_score
 
 import torch
 
@@ -15,7 +17,124 @@ import torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from dataset_3d import deepfake_3d_rawaudio, my_collate_rawaudio
+
+def normalize_path(path_str):
+    return os.path.normpath(path_str.replace('/', os.sep))
+
+
+def load_metadata_entries(dataset_name, metadata_root, raw_root):
+    meta_path = os.path.join(metadata_root, f'{dataset_name}.metadata.json')
+    if not os.path.exists(meta_path):
+        return []
+
+    with open(meta_path, 'r') as f:
+        data = json.load(f)
+
+    entries = []
+
+    if dataset_name == 'dfdc':
+        base = os.path.join(raw_root, 'dfdc')
+        for rel, info in data.items():
+            label = 'fake' if info.get('label', '').upper() == 'FAKE' else 'real'
+            split = info.get('split')
+            full_path = os.path.join(base, normalize_path(rel))
+            entries.append({'path': full_path, 'label': label, 'split': split})
+
+    elif dataset_name == 'faceavceleb':
+        for item in data:
+            file_path = normalize_path(item.get('file', ''))
+            method = item.get('method', '').lower()
+            dtype = item.get('type', '').lower()
+            label = 'real' if method == 'real' or 'realvideo-realaudio' in dtype else 'fake'
+            entries.append({'path': file_path, 'label': label, 'split': None})
+
+    elif dataset_name == 'av1':
+        for item in data:
+            file_path = normalize_path(item.get('file', ''))
+            modify_type = item.get('modify_type', '').lower()
+            label = 'real' if modify_type == 'real' else 'fake'
+            split = item.get('split')
+            entries.append({'path': file_path, 'label': label, 'split': split})
+
+    return entries
+
+
+def select_entries(entries, dry_run=False, max_total=10):
+    if not entries:
+        return []
+
+    # If a test/val split exists, prefer it
+    split_tags = {e.get('split') for e in entries}
+    if 'test' in split_tags or 'val' in split_tags:
+        entries = [e for e in entries if e.get('split') in ('test', 'val')]
+
+    if not dry_run:
+        return entries
+
+    reals = [e for e in entries if e['label'] == 'real']
+    fakes = [e for e in entries if e['label'] == 'fake']
+
+    take_real = min(len(reals), max_total // 2)
+    take_fake = min(len(fakes), max_total // 2)
+
+    selected = reals[:take_real] + fakes[:take_fake]
+    if len(selected) < max_total:
+        remaining = [e for e in entries if e not in selected]
+        selected += remaining[:max_total - len(selected)]
+
+    return selected
+
+
+def stage_dataset(entries, stage_dir):
+    if os.path.exists(stage_dir):
+        shutil.rmtree(stage_dir)
+    os.makedirs(stage_dir, exist_ok=True)
+
+    for label in ['real', 'fake']:
+        os.makedirs(os.path.join(stage_dir, label), exist_ok=True)
+
+    staged = 0
+    for idx, entry in enumerate(entries):
+        src = entry['path']
+        if not os.path.exists(src):
+            continue
+        label = entry['label']
+        ext = os.path.splitext(src)[1] or '.mp4'
+        dst_name = f'{idx:05d}_{os.path.basename(src)}'
+        if not dst_name.lower().endswith(ext.lower()):
+            dst_name += ext
+        dst = os.path.join(stage_dir, label, dst_name)
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copyfile(src, dst)
+        staged += 1
+
+    return staged
+
+from dataset_3d import deepfake_3d_rawaudio
+
+
+def collate_rawaudio_fixed(batch, target_len=48000):
+    from torch.utils.data.dataloader import default_collate
+    fixed = []
+    for item in batch:
+        if item is None:
+            continue
+        video_seq, audio_seq, target, audiopath = item
+        if audio_seq is None or audio_seq.numel() == 0:
+            continue
+        if audio_seq.shape[0] > target_len:
+            audio_seq = audio_seq[:target_len]
+        elif audio_seq.shape[0] < target_len:
+            pad = target_len - audio_seq.shape[0]
+            audio_seq = torch.nn.functional.pad(audio_seq, (0, pad))
+        fixed.append((video_seq, audio_seq, target, audiopath))
+
+    if len(fixed) == 0:
+        return [[], [], [], []]
+
+    return default_collate(fixed)
 
 
 def get_rawaudio_data(transform, args, mode='test'):
@@ -31,12 +150,12 @@ def get_rawaudio_data(transform, args, mode='test'):
 
     if mode == 'test':
         data_loader = data.DataLoader(dataset,
-                                      batch_size=1,
-                                      sampler=sampler,
-                                      shuffle=False,
-                                      num_workers=args.num_workers,
-                                      pin_memory=True,
-                                      collate_fn=my_collate_rawaudio)
+                          batch_size=1,
+                          sampler=sampler,
+                          shuffle=False,
+                          num_workers=args.num_workers,
+                          pin_memory=True,
+                          collate_fn=collate_rawaudio_fixed)
     else:
         raise ValueError('only test mode supported in run script')
 
@@ -85,8 +204,9 @@ def evaluate_from_pickles(pred_dict, target_dict, num_chunks_dict):
     y_score = np.array(scores)
     y_true = np.array(targets)
 
-    roc_auc = roc_auc_score(y_true, y_score) if len(np.unique(y_true)) > 1 else float('nan')
-    pr_auc = average_precision_score(y_true, y_score) if len(np.unique(y_true)) > 1 else float('nan')
+    has_both_classes = len(np.unique(y_true)) > 1
+    roc_auc = roc_auc_score(y_true, y_score) if has_both_classes else float('nan')
+    pr_auc = average_precision_score(y_true, y_score) if has_both_classes else float('nan')
 
     thr, _ = best_threshold_by_f1(y_true, y_score)
     y_pred = (y_score >= thr).astype(int)
@@ -95,12 +215,15 @@ def evaluate_from_pickles(pred_dict, target_dict, num_chunks_dict):
     rec = recall_score(y_true, y_pred, zero_division=0)
     f1 = f1_score(y_true, y_pred, zero_division=0)
 
-    eer, eer_thr = compute_eer(y_true, y_score)
+    if has_both_classes:
+        eer, eer_thr = compute_eer(y_true, y_score)
+    else:
+        eer, eer_thr = float('nan'), float('nan')
 
     # FPR at chosen threshold
     tn = np.sum((y_true == 0) & (y_pred == 0))
     fp = np.sum((y_true == 0) & (y_pred == 1))
-    fpr = float(fp) / float(fp + tn) if (fp + tn) > 0 else 0.0
+    fpr = float(fp) / float(fp + tn) if (fp + tn) > 0 else float('nan')
 
     return {
         'Samples': len(y_true),
@@ -138,18 +261,37 @@ def prepare_splits(out_dir, dataset_name, dry_run=False):
                         rows.append([entry_path, audio_path, label])
         return rows
 
-    # train and test roots
-    train_root = os.path.join(out_dir, 'train', 'pytmp')
-    test_root = os.path.join(out_dir, 'test', 'pytmp')
-
-    train_rows = build_split(train_root)
-    test_rows = build_split(test_root)
+    # Prefer root pytmp if present (pre-process.py output)
+    root_pytmp = os.path.join(out_dir, 'pytmp')
+    if os.path.exists(root_pytmp):
+        test_rows = build_split(root_pytmp)
+        train_rows = test_rows
+    else:
+        train_root = os.path.join(out_dir, 'train', 'pytmp')
+        test_root = os.path.join(out_dir, 'test', 'pytmp')
+        train_rows = build_split(train_root)
+        test_rows = build_split(test_root)
 
     # write train_split.csv
     train_csv = os.path.join(out_dir, 'train_split.csv')
     with open(train_csv, 'w') as f:
         for r in train_rows:
             f.write(','.join(r) + '\n')
+
+    # If dry_run, keep only first chunk per video for up to 10 videos
+    if dry_run:
+        limited = []
+        seen = {}
+        for r in test_rows:
+            video_id = os.path.basename(os.path.dirname(r[0]))
+            if video_id not in seen and len(seen) >= 10:
+                continue
+            count = seen.get(video_id, 0)
+            if count >= 1:
+                continue
+            seen[video_id] = count + 1
+            limited.append(r)
+        test_rows = limited
 
     # write test split depending on dataset naming the loader expects
     if dataset_name == 'dfdc':
@@ -160,14 +302,6 @@ def prepare_splits(out_dir, dataset_name, dry_run=False):
     with open(test_csv, 'w') as f:
         for r in test_rows:
             f.write(','.join(r) + '\n')
-
-    # If dry_run, truncate test CSV to first 10 lines
-    if dry_run:
-        if os.path.exists(test_csv):
-            with open(test_csv, 'r') as f:
-                lines = f.readlines()
-            with open(test_csv, 'w') as f:
-                f.writelines(lines[:10])
 
     return len(test_rows)
 
@@ -182,16 +316,14 @@ def run_preprocess_for_dir(raw_dir, dont_crop_face=False):
 
 def simple_preprocess_for_dir(raw_dir):
     """Lightweight preprocessing for dry-run: split videos into 30-frame chunks and audio snippets using ffmpeg.
-    Produces structure: <raw_dir>/pytmp/{real,fade}/{video_id}/{chunk_id}/[frames].jpg and <raw_dir>/pytmp/{real,fake}/{video_id}/{chunk_id}.wav
+    Produces structure: <raw_dir>/pytmp/{real,fake}/{video_id}/{chunk_id}/[frames].jpg and <raw_dir>/pytmp/{real,fake}/{video_id}/{chunk_id}.wav
     """
     for split in ['real', 'fake']:
         src_dir = os.path.join(raw_dir, split)
         if not os.path.exists(src_dir):
             continue
-        out_root_train = os.path.join(raw_dir, 'train', 'pytmp', split)
-        out_root_test = os.path.join(raw_dir, 'test', 'pytmp', split)
-        os.makedirs(out_root_train, exist_ok=True)
-        os.makedirs(out_root_test, exist_ok=True)
+        out_root = os.path.join(raw_dir, 'pytmp', split)
+        os.makedirs(out_root, exist_ok=True)
 
         for video in os.listdir(src_dir):
             if not video.lower().endswith('.mp4'):
@@ -202,51 +334,57 @@ def simple_preprocess_for_dir(raw_dir):
             os.makedirs(work_frames, exist_ok=True)
 
             # extract frames
-            cmd_frames = f"ffmpeg -y -i \"{video_path}\" -qscale:v 2 -threads 1 -f image2 \"{os.path.join(work_frames, '%06d.jpg')}\""
+            cmd_frames = f"ffmpeg -hide_banner -loglevel error -y -i \"{video_path}\" -qscale:v 2 -threads 1 -f image2 \"{os.path.join(work_frames, '%06d.jpg')}\""
             subprocess.call(cmd_frames, shell=True)
 
             # extract full audio
             full_audio = os.path.join(work_frames, 'audio.wav')
-            cmd_audio = f"ffmpeg -y -i \"{video_path}\" -ac 1 -vn -acodec pcm_s16le -ar 48000 \"{full_audio}\""
+            cmd_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{video_path}\" -ac 1 -vn -acodec pcm_s16le -ar 48000 \"{full_audio}\""
             subprocess.call(cmd_audio, shell=True)
 
             frames = sorted([f for f in os.listdir(work_frames) if f.endswith('.jpg')])
             total_frames = len(frames)
-            if total_frames < 30:
+            if total_frames == 0:
                 shutil.rmtree(work_frames, ignore_errors=True)
                 continue
+            video_out_dir = os.path.join(out_root, video_id)
+            os.makedirs(video_out_dir, exist_ok=True)
 
-            video_out_dir_train = os.path.join(out_root_train, video_id)
-            video_out_dir_test = os.path.join(out_root_test, video_id)
-            os.makedirs(video_out_dir_train, exist_ok=True)
-            os.makedirs(video_out_dir_test, exist_ok=True)
+            if total_frames < 30:
+                videonum = '00000'
+                chunk_dir = os.path.join(video_out_dir, videonum)
+                os.makedirs(chunk_dir, exist_ok=True)
+                for j in range(30):
+                    src_idx = min(j, total_frames - 1)
+                    src = os.path.join(work_frames, frames[src_idx])
+                    dst = os.path.join(chunk_dir, '%06d.jpg' % (j + 1))
+                    shutil.copyfile(src, dst)
+
+                audiotmp = os.path.join(video_out_dir, videonum + '.wav')
+                cmd_chunk_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{full_audio}\" -ss 0.000 -to 1.000 \"{audiotmp}\""
+                subprocess.call(cmd_chunk_audio, shell=True)
+                shutil.rmtree(work_frames, ignore_errors=True)
+                continue
 
             for frameNum in range(0, total_frames, 30):
                 if frameNum + 30 > total_frames:
                     continue
                 videonum = '%05d' % (frameNum // 30)
-                chunk_dir_train = os.path.join(video_out_dir_train, videonum)
-                chunk_dir_test = os.path.join(video_out_dir_test, videonum)
-                os.makedirs(chunk_dir_train, exist_ok=True)
-                os.makedirs(chunk_dir_test, exist_ok=True)
+                chunk_dir = os.path.join(video_out_dir, videonum)
+                os.makedirs(chunk_dir, exist_ok=True)
                 # copy frames
-                for i in range(frameNum + 1, frameNum + 31):
-                    src = os.path.join(work_frames, '%06d.jpg' % i)
-                    dst_train = os.path.join(chunk_dir_train, '%06d.jpg' % i)
-                    dst_test = os.path.join(chunk_dir_test, '%06d.jpg' % i)
+                for j in range(30):
+                    src = os.path.join(work_frames, '%06d.jpg' % (frameNum + j + 1))
+                    dst = os.path.join(chunk_dir, '%06d.jpg' % (frameNum + j + 1))
                     if os.path.exists(src):
-                        shutil.copyfile(src, dst_train)
-                        shutil.copyfile(src, dst_test)
+                        shutil.copyfile(src, dst)
 
                 # create audio snippet for this chunk
-                audiotmp_train = os.path.join(video_out_dir_train, videonum + '.wav')
-                audiotmp_test = os.path.join(video_out_dir_test, videonum + '.wav')
+                audiotmp = os.path.join(video_out_dir, videonum + '.wav')
                 audiostart = frameNum / 30.0
                 audioend = (frameNum + 30) / 30.0
-                cmd_chunk_audio_train = f"ffmpeg -y -i \"{full_audio}\" -ss {audiostart:.3f} -to {audioend:.3f} \"{audiotmp_train}\""
-                cmd_chunk_audio_test = f"ffmpeg -y -i \"{full_audio}\" -ss {audiostart:.3f} -to {audioend:.3f} \"{audiotmp_test}\""
-                subprocess.call(cmd_chunk_audio_train, shell=True)
-                subprocess.call(cmd_chunk_audio_test, shell=True)
+                cmd_chunk_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{full_audio}\" -ss {audiostart:.3f} -to {audioend:.3f} \"{audiotmp}\""
+                subprocess.call(cmd_chunk_audio, shell=True)
 
             shutil.rmtree(work_frames, ignore_errors=True)
 
@@ -319,7 +457,7 @@ def run_inference_and_collect(out_dir, dataset_name, checkpoint, device='cuda'):
 
             pred_val = out[0].view(-1).item()
             tar = int(target[0, :].view(-1).item())
-            vid_name = audiopath[0].split('/')[-2]
+            vid_name = os.path.basename(os.path.dirname(audiopath[0]))
 
             if vid_name in test_pred:
                 test_pred[vid_name] += pred_val
@@ -334,10 +472,15 @@ def run_inference_and_collect(out_dir, dataset_name, checkpoint, device='cuda'):
 
 def append_results_markdown(md_path, row):
     header = '| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n'
-    sep = '|---' + '|' * 12 + '\n'
+    sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|\n'
     exists = os.path.exists(md_path)
+    needs_header = True
+    if exists and os.path.getsize(md_path) > 0:
+        with open(md_path, 'r') as f:
+            first_line = f.readline().strip()
+        needs_header = not first_line.startswith('| Timestamp |')
     with open(md_path, 'a') as f:
-        if not exists:
+        if needs_header:
             f.write(header)
             f.write(sep)
         f.write(f"| {row['Timestamp']} | {row['Dataset']} | {row['Samples']} | {row['Threshold']:.4f} | {row['ThresholdStrategy']} | {row['Accuracy']:.4f} | {row['Precision']:.4f} | {row['Recall']:.4f} | {row['F1']:.4f} | {row['ROC_AUC']:.4f} | {row['PR_AUC']:.4f} | {row['EER']:.4f} | {row['FPR']:.4f} |\n")
@@ -347,111 +490,83 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--datasets', type=str, default='all', help='Comma separated dataset names or "all"')
     parser.add_argument('--base_data_root', type=str, default=r'C:\t309\dataSubset')
+    parser.add_argument('--metadata_root', type=str, default=None)
     parser.add_argument('--raw_root', type=str, default=r'C:\t309\dataset')
     parser.add_argument('--checkpoint', type=str, default=r'C:\t309\detectors\FGI\model_best_epoch99.pth.tar')
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--out_md', type=str, default=r'C:\t309\results\fgi\fgi.md')
+    parser.add_argument('--stage_root', type=str, default=r'C:\t309\results\fgi\staging')
+    parser.add_argument('--preprocess', type=str, default='simple', choices=['simple', 'full'])
     parser.add_argument('--dry_run', action='store_true')
     args = parser.parse_args()
 
-    # determine datasets by listing metadata files in base_data_root
+    metadata_root = args.metadata_root if args.metadata_root else args.base_data_root
+
+    # determine datasets by listing metadata files in metadata_root
     if args.datasets == 'all':
-        mets = [f for f in os.listdir(args.base_data_root) if f.endswith('.metadata.json')]
-        datasets = [os.path.splitext(f)[0].replace('.metadata','') for f in mets]
-        # fallback simpler names
-        datasets = [name.replace('.metadata','') for name in [os.path.splitext(x)[0] for x in mets]]
-        # map known metadata filenames
-        simple = []
-        for m in mets:
-            if 'dfdc' in m.lower():
-                simple.append('dfdc')
-            elif 'fakeavceleb' in m.lower() or 'faceavceleb' in m.lower():
-                simple.append('fakeavceleb')
-            elif 'av1' in m.lower() or 'av-1m' in m.lower():
-                simple.append('av1')
-            else:
-                simple.append(os.path.splitext(m)[0])
-        datasets = list(dict.fromkeys(simple))
+        mets = [f for f in os.listdir(metadata_root) if f.endswith('.metadata.json')]
+        datasets = [os.path.splitext(f)[0].replace('.metadata', '') for f in mets]
     else:
         datasets = [d.strip() for d in args.datasets.split(',')]
 
     os.makedirs(os.path.dirname(args.out_md), exist_ok=True)
 
-    # mapping to raw folders
-    raw_map = {
-        'dfdc': os.path.join(args.raw_root, 'dfdc'),
-        'fakeavceleb': os.path.join(args.raw_root, 'FakeAVCeleb'),
-        'av1': os.path.join(args.raw_root, 'av-1m')
-    }
+    os.makedirs(args.stage_root, exist_ok=True)
 
     for ds in datasets:
         print('Processing dataset', ds)
         ds_lower = ds.lower()
-        if 'dfdc' in ds_lower:
-            ds_key = 'dfdc'
-        elif 'fakeav' in ds_lower or 'faceav' in ds_lower:
-            ds_key = 'fakeavceleb'
+        model_dataset = 'fakeavceleb' if 'faceav' in ds_lower or 'fakeav' in ds_lower else 'dfdc'
+
+        entries = load_metadata_entries(ds, metadata_root, args.raw_root)
+        if not entries:
+            print(f'No metadata entries found for {ds}; skipping.')
+            continue
+
+        selected = select_entries(entries, dry_run=args.dry_run, max_total=10)
+        if not selected:
+            print(f'No entries selected for {ds}; skipping.')
+            continue
+
+        print(f'Selected {len(selected)} items for {ds}')
+
+        stage_dir = os.path.join(args.stage_root, ds)
+        staged_count = stage_dataset(selected, stage_dir)
+        if staged_count == 0:
+            print(f'No files staged for {ds}; skipping.')
+            continue
+        print(f'Staged {staged_count} files for {ds} at {stage_dir}')
+
+        run_preprocess_dir = stage_dir
+
+        # run preprocessing to create pytmp and audio chunks
+        print('Running preprocessing for', ds)
+        if args.dry_run or args.preprocess == 'simple':
+            simple_preprocess_for_dir(run_preprocess_dir)
         else:
-            print(f'Skipping unsupported dataset: {ds}')
+            run_preprocess_for_dir(run_preprocess_dir)
+
+        # create csv splits
+        print('Creating CSV splits for', ds)
+        test_count = prepare_splits(run_preprocess_dir, model_dataset, dry_run=args.dry_run)
+        print(f'Generated {test_count} test rows for {ds}')
+
+        if test_count == 0:
+            print(f'No test samples generated for dataset {ds}; skipping inference.')
             continue
 
-        # determine raw dir and out_dir (where pre-process/write_csv will write)
-        raw_dir = raw_map.get(ds_key, os.path.join(args.raw_root, ds_key))
-        out_dir = raw_dir
+        # run inference and collect pickles
+        print('Running inference for', ds)
+        pred, targ, numc = run_inference_and_collect(run_preprocess_dir, model_dataset, args.checkpoint, device=args.device)
 
-        if not os.path.exists(raw_dir):
-            print(f'Raw dir for {ds} not found: {raw_dir}. Skipping.')
-            continue
-
-        # If dry_run, create small temporary folder with subset of videos
-        tmp_dir = None
-        try:
-            if args.dry_run:
-                tmp_dir = tempfile.mkdtemp(prefix=f'fgidry_{ds}_')
-                for s in ['real', 'fake']:
-                    src_dir = os.path.join(raw_dir, s)
-                    dst_dir = os.path.join(tmp_dir, s)
-                    os.makedirs(dst_dir, exist_ok=True)
-                    if os.path.exists(src_dir):
-                        files = [f for f in os.listdir(src_dir) if f.lower().endswith('.mp4')]
-                        take = max(1, min(5, len(files)))
-                        for i, fname in enumerate(files[:take]):
-                            shutil.copyfile(os.path.join(src_dir, fname), os.path.join(dst_dir, fname))
-                run_preprocess_dir = tmp_dir
-            else:
-                run_preprocess_dir = raw_dir
-
-            # run preprocessing to create pytmp and audio chunks
-            print('Running preprocessing for', ds)
-            if args.dry_run:
-                simple_preprocess_for_dir(run_preprocess_dir)
-            else:
-                run_preprocess_for_dir(run_preprocess_dir)
-
-            # create csv splits
-            print('Creating CSV splits for', ds)
-            test_count = prepare_splits(run_preprocess_dir, 'dfdc' if ds == 'dfdc' else 'fakeavceleb' if ds in ('fakeavceleb','faceavceleb') else ds, dry_run=args.dry_run)
-
-            if test_count == 0:
-                print(f'No test samples generated for dataset {ds}; skipping inference.')
-                continue
-
-            # run inference and collect pickles
-            print('Running inference for', ds)
-            pred, targ, numc = run_inference_and_collect(run_preprocess_dir, 'dfdc' if ds == 'dfdc' else 'fakeavceleb' if ds in ('fakeavceleb','faceavceleb') else ds, args.checkpoint, device=args.device)
-
-            metrics = evaluate_from_pickles(pred, targ, numc)
-            row = {
-                'Timestamp': datetime.now().isoformat(),
-                'Dataset': ds,
-                **metrics
-            }
-            append_results_markdown(args.out_md, row)
-            print('Saved results for', ds)
-
-        finally:
-            if tmp_dir:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+        metrics = evaluate_from_pickles(pred, targ, numc)
+        row = {
+            'Timestamp': datetime.now().isoformat(),
+            'Dataset': ds,
+            **metrics
+        }
+        append_results_markdown(args.out_md, row)
+        print('Saved results for', ds)
 
 
 if __name__ == '__main__':
