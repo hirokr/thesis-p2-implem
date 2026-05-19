@@ -6,3 +6,6 @@
 | Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 2026-05-18T00:44:06.584122 | av1 | 19902 | 0.0000 | f1 | 0.7514 | 0.7514 | 1.0000 | 0.8580 | 0.5168 | 0.7603 | 0.4892 | 1.0000 |
+| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-05-19T22:09:29.132480 | av1 | 19902 | 0.0000 | f1 | 0.7514 | 0.7514 | 1.0000 | 0.8580 | 0.5168 | 0.7603 | 0.4892 | 1.0000 |
