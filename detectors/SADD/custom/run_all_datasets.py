@@ -310,6 +310,19 @@ def select_subset(items: Sequence[MetadataItem], dry_run: bool) -> List[Metadata
     return selected
 
 
+def log_skip(item: MetadataItem, reason: str) -> None:
+    print(f"Skipping {item.video_id}: {reason}")
+
+
+def is_missing_audio_error(message: str) -> bool:
+    lowered = message.lower()
+    return (
+        "does not contain any stream" in lowered
+        or "matches no streams" in lowered
+        or "no audio" in lowered
+    )
+
+
 def preprocess_item(item: MetadataItem, dataset_cache_root: Path, crop_face: bool) -> None:
     run_pipeline_module = load_run_pipeline_module()
 
@@ -319,10 +332,23 @@ def preprocess_item(item: MetadataItem, dataset_cache_root: Path, crop_face: boo
         return
 
     if not item.video_path.exists():
-        raise FileNotFoundError(f"Video file does not exist: {item.video_path}")
+        log_skip(item, f"missing video file: {item.video_path}")
+        return
 
     run_pipeline_module.scene_detect = make_full_video_scene_detect(run_pipeline_module)
-    run_pipeline_module.run_pipeline(str(dataset_cache_root), str(item.video_path), item.video_id, label_name, crop_face=crop_face)
+    try:
+        run_pipeline_module.run_pipeline(
+            str(dataset_cache_root),
+            str(item.video_path),
+            item.video_id,
+            label_name,
+            crop_face=crop_face,
+        )
+    except RuntimeError as exc:
+        if is_missing_audio_error(str(exc)):
+            log_skip(item, f"missing audio stream in {item.video_path}")
+            return
+        raise
 
     crop_dir = dataset_cache_root / "pycrop" / label_name / item.video_id
     if not crop_dir.exists():
@@ -358,19 +384,29 @@ def preprocess_item(item: MetadataItem, dataset_cache_root: Path, crop_face: boo
         "image2",
         str(frames_dir / "%06d.jpg"),
     ])
-    run_ffmpeg([
-        "-y",
-        "-i",
-        str(crop_video_path),
-        "-ac",
-        "1",
-        "-vn",
-        "-acodec",
-        "pcm_s16le",
-        "-ar",
-        "48000",
-        str(audio_path),
-    ])
+    try:
+        run_ffmpeg([
+            "-y",
+            "-i",
+            str(crop_video_path),
+            "-ac",
+            "1",
+            "-vn",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            "48000",
+            str(audio_path),
+        ])
+    except RuntimeError as exc:
+        if is_missing_audio_error(str(exc)):
+            log_skip(item, f"missing audio stream in {crop_video_path}")
+            return
+        raise
+
+    if not audio_path.exists():
+        log_skip(item, f"missing audio output: {audio_path}")
+        return
 
     frame_files = sorted(frames_dir.glob("*.jpg"))
     if len(frame_files) < 30:
