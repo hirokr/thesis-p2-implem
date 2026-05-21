@@ -1,16 +1,16 @@
-# Graph Report - t309  (2026-05-17)
+# Graph Report - t309  (2026-05-19)
 
 ## Corpus Check
-- 2753 files · ~93,837,586 words
+- 2754 files · ~361,900,915 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 13920 nodes · 26249 edges · 1220 communities (821 shown, 399 thin omitted)
+- 13923 nodes · 26252 edges · 1229 communities (827 shown, 402 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 1376 edges (avg confidence: 0.6)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b4923bc8`
+- Built from commit: `fbfda2fa`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -569,6 +569,7 @@
 - [[_COMMUNITY_Community 551|Community 551]]
 - [[_COMMUNITY_Community 552|Community 552]]
 - [[_COMMUNITY_Community 553|Community 553]]
+- [[_COMMUNITY_Community 554|Community 554]]
 - [[_COMMUNITY_Community 555|Community 555]]
 - [[_COMMUNITY_Community 556|Community 556]]
 - [[_COMMUNITY_Community 557|Community 557]]
@@ -1000,6 +1001,15 @@
 - [[_COMMUNITY_Community 1092|Community 1092]]
 - [[_COMMUNITY_Community 1093|Community 1093]]
 - [[_COMMUNITY_Community 1095|Community 1095]]
+- [[_COMMUNITY_Community 1220|Community 1220]]
+- [[_COMMUNITY_Community 1221|Community 1221]]
+- [[_COMMUNITY_Community 1222|Community 1222]]
+- [[_COMMUNITY_Community 1223|Community 1223]]
+- [[_COMMUNITY_Community 1224|Community 1224]]
+- [[_COMMUNITY_Community 1225|Community 1225]]
+- [[_COMMUNITY_Community 1226|Community 1226]]
+- [[_COMMUNITY_Community 1227|Community 1227]]
+- [[_COMMUNITY_Community 1228|Community 1228]]
 
 ## God Nodes (most connected - your core abstractions)
 1. `Dictionary` - 61 edges
@@ -1020,12 +1030,12 @@
   detectors/AVH-Align/av_hubert/fairseq-old/examples/adaptive_span/adaptive_span_loss.py → detectors/AVH-Align/av_hubert/fairseq-old/fairseq/criterions/cross_entropy.py
 - `AdaptiveSpanCriterion` --uses--> `CrossEntropyCriterion`  [INFERRED]
   detectors/AVH-Align/av_hubert/fairseq-old/examples/adaptive_span/adaptive_span_loss.py → detectors/AVH-Align/av_hubert/fairseq-old/fairseq/criterions/cross_entropy.py
+- `GRUTransformerModel` --uses--> `TransformerEncoder`  [INFERRED]
+  detectors/AVH-Align/av_hubert/fairseq-old/examples/byte_level_bpe/gru_transformer.py → detectors/AVH-Align/av_hubert/fairseq-old/fairseq/models/transformer.py
 - `GRUTransformerModel` --uses--> `TransformerModel`  [INFERRED]
   detectors/AVH-Align/av_hubert/fairseq-old/examples/byte_level_bpe/gru_transformer.py → detectors/AVH-Align/av_hubert/fairseq-old/fairseq/models/transformer.py
-- `GRUTransformerEncoder` --uses--> `TransformerModel`  [INFERRED]
-  detectors/AVH-Align/av_hubert/fairseq-old/examples/byte_level_bpe/gru_transformer.py → detectors/AVH-Align/av_hubert/fairseq-old/fairseq/models/transformer.py
 
-## Communities (1220 total, 399 thin omitted)
+## Communities (1229 total, 402 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.07
@@ -1049,27 +1059,27 @@ Nodes (17): AutoRegressiveTransformerEncoderCrossModalReconstructionModel, CNNDo
 
 ### Community 5 - "Community 5"
 Cohesion: 0.04
-Nodes (64): __Pyx_c_abs_float(), __Pyx_c_abs_long__double(), __Pyx_c_diff_float(), __Pyx_c_diff_long__double(), __Pyx_c_eq_double(), __Pyx_c_eq_long__double(), __Pyx_c_is_zero_double(), __Pyx_c_neg_double() (+56 more)
+Nodes (64): __pyx_add_acquisition_count_locked(), __Pyx_AllocateExtensionType(), __Pyx_c_abs_double(), __Pyx_c_conj_float(), __Pyx_c_diff_float(), __Pyx_c_diff_long__double(), __Pyx_c_eq_float(), __Pyx_c_is_zero_double() (+56 more)
 
 ### Community 6 - "Community 6"
 Cohesion: 0.04
-Nodes (64): __pyx_add_acquisition_count_locked(), __Pyx_AllocateExtensionType(), __pyx_bisect_code_objects(), __Pyx_c_abs_double(), __Pyx_c_conj_double(), __Pyx_c_conj_float(), __Pyx_c_conj_long__double(), __Pyx_c_diff_double() (+56 more)
+Nodes (64): __pyx_bisect_code_objects(), __Pyx_c_abs_float(), __Pyx_c_abs_long__double(), __Pyx_c_conj_double(), __Pyx_c_conj_long__double(), __Pyx_c_diff_double(), __Pyx_c_eq_double(), __Pyx_c_eq_long__double() (+56 more)
 
 ### Community 7 - "Community 7"
 Cohesion: 0.04
-Nodes (17): AdaptiveInput, BeamableMM, This module provides an optimized MM for beam decoding with attention.      It, Fp32GroupNorm, LayerDropModuleList, A LayerDrop implementation based on :class:`torch.nn.ModuleList`.      We refr, LearnedPositionalEmbedding, This module learns positional embeddings up to a fixed maximum size.     Paddin (+9 more)
+Nodes (22): AdaptiveInput, BeamableMM, This module provides an optimized MM for beam decoding with attention.      It, DynamicConv(), in_proj(), Linear(), Fp32GroupNorm, LayerDropModuleList (+14 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.13
-Nodes (9): can_reuse_epoch_itr_across_epochs(), collate(), DenoisingDataset, Merge a list of samples to form a mini-batch.         Args:             sample, Return the number of tokens in a sample. This value is used to         enforce, Return an example's size as a float or tuple. This value is used when         f, Return an ordered list of indices. Batches will be constructed based         on, A wrapper around TokenBlockDataset for BART dataset.      Args:         datas (+1 more)
+Cohesion: 0.1
+Nodes (21): can_reuse_epoch_itr_across_epochs(), collate(), DenoisingDataset, Merge a list of samples to form a mini-batch.         Args:             sample, Return the number of tokens in a sample. This value is used to         enforce, Return an example's size as a float or tuple. This value is used when         f, Return an ordered list of indices. Batches will be constructed based         on, A wrapper around TokenBlockDataset for BART dataset.      Args:         datas (+13 more)
 
 ### Community 9 - "Community 9"
 Cohesion: 0.04
-Nodes (62): __Pyx_c_abs_double(), __Pyx_c_abs_long__double(), __Pyx_c_conj_float(), __Pyx_c_diff_float(), __Pyx_c_diff_long__double(), __Pyx_c_is_zero_float(), __Pyx_c_neg_double(), __Pyx_c_neg_long__double() (+54 more)
+Nodes (63): __pyx_bisect_code_objects(), __Pyx_c_abs_double(), __Pyx_c_conj_double(), __Pyx_c_conj_float(), __Pyx_c_conj_long__double(), __Pyx_c_eq_double(), __Pyx_c_eq_float(), __Pyx_c_neg_double() (+55 more)
 
 ### Community 10 - "Community 10"
 Cohesion: 0.04
-Nodes (62): __pyx_add_acquisition_count_locked(), __Pyx_AllocateExtensionType(), __pyx_bisect_code_objects(), __Pyx_c_abs_float(), __Pyx_c_conj_double(), __Pyx_c_conj_long__double(), __Pyx_c_diff_double(), __Pyx_c_eq_double() (+54 more)
+Nodes (62): __pyx_add_acquisition_count_locked(), __Pyx_AllocateExtensionType(), __Pyx_c_abs_float(), __Pyx_c_abs_long__double(), __Pyx_c_diff_double(), __Pyx_c_diff_float(), __Pyx_c_diff_long__double(), __Pyx_c_eq_long__double() (+54 more)
 
 ### Community 11 - "Community 11"
 Cohesion: 0.05
@@ -1108,8 +1118,8 @@ Cohesion: 0.12
 Nodes (50): _apply_bbpe(), _apply_bpe(), _concat_files(), _convert_to_bchar(), _convert_train(), _convert_xml(), _get_bpe(), _get_bytes() (+42 more)
 
 ### Community 20 - "Community 20"
-Cohesion: 0.09
-Nodes (65): apply_to_sample(), buffered_arange(), clip_grad_norm_(), convert_padding_direction(), csv_str_list(), CudaEnvironment, deprecation_warning(), eval_bool() (+57 more)
+Cohesion: 0.07
+Nodes (69): apply_to_sample(), buffered_arange(), clip_grad_norm_(), convert_padding_direction(), csv_str_list(), CudaEnvironment, deprecation_warning(), eval_bool() (+61 more)
 
 ### Community 21 - "Community 21"
 Cohesion: 0.1
@@ -1128,8 +1138,8 @@ Cohesion: 0.1
 Nodes (30): add_args(), AttentionLayer, base_architecture(), build_model(), ConvTBC(), Embedding(), extend_conv_spec(), fconv_iwslt_de_en() (+22 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.16
-Nodes (23): add_args(), base_architecture(), base_architecture_enconly(), build_decoder(), build_encoder(), build_model(), Embedding(), LayerNorm() (+15 more)
+Cohesion: 0.14
+Nodes (25): add_args(), base_architecture(), base_architecture_enconly(), build_decoder(), build_encoder(), build_model(), Embedding(), LayerNorm() (+17 more)
 
 ### Community 26 - "Community 26"
 Cohesion: 0.15
@@ -1148,8 +1158,8 @@ Cohesion: 0.11
 Nodes (18): base_monotonic_architecture(), build_decoder(), build_encoder(), Clear cache in the monotonic layers.         The cache is generated because of, Similar to *forward* but only return features.          Returns:, Transformer decoder consisting of *args.decoder_layers* layers. Each layer, transformer_monotonic_iwslt_de_en(), transformer_monotonic_vaswani_wmt_en_de_big() (+10 more)
 
 ### Community 30 - "Community 30"
-Cohesion: 0.13
-Nodes (11): LM, FairseqLM, Evaluate language model based on the current lm state and new word         Para, Evaluate eos for language model based on the current lm state          Returns, Generate a batch of inferences., Run encoder and normalize emissions, Normalize tokens by handling CTC blank, ASG replabels, etc., W2lDecoder (+3 more)
+Cohesion: 0.14
+Nodes (10): FairseqLM, Evaluate language model based on the current lm state and new word         Para, Evaluate eos for language model based on the current lm state          Returns, Generate a batch of inferences., Run encoder and normalize emissions, Normalize tokens by handling CTC blank, ASG replabels, etc., W2lDecoder, W2lFairseqLMDecoder (+2 more)
 
 ### Community 31 - "Community 31"
 Cohesion: 0.1
@@ -1164,8 +1174,8 @@ Cohesion: 0.05
 Nodes (15): CenterCrop, ColorJitter, get_params(), Normalize, Padding, RandomCrop, RandomCropWithProb, RandomGray (+7 more)
 
 ### Community 34 - "Community 34"
-Cohesion: 0.08
-Nodes (29): conversion_helper(), fp16_to_fp32(), fp32_to_fp16(), Apply conversion to val. Recursively apply conversion if `val` is a nested tuple, Convert fp32 `val` to fp16, Convert fp16 `val` to fp32, # TODO:  Update overflow check + downscale to use Carl's fused kernel., backwards_debug_hook() (+21 more)
+Cohesion: 0.12
+Nodes (20): backwards_debug_hook(), BN_convert_float(), convert_module(), convert_network(), FP16Model, master_params_to_model_params(), model_grads_to_master_grads(), network_to_half() (+12 more)
 
 ### Community 35 - "Community 35"
 Cohesion: 0.11
@@ -1185,15 +1195,15 @@ Nodes (12): BaseScorer, BleuConfig, BleuStat, SacrebleuConfig, SacrebleuScorer, 
 
 ### Community 39 - "Community 39"
 Cohesion: 0.1
-Nodes (20): FairseqEncoder, FairseqEncoderDecoderModel, build_model(), create_laser_data_and_config_json(), dummy_dataloader(), dummy_dictionary(), preprocess_summarization_data(), sequence_generator_setup() (+12 more)
+Nodes (21): FairseqEncoder, FairseqEncoderDecoderModel, FairseqIncrementalDecoder, build_model(), create_laser_data_and_config_json(), dummy_dataloader(), dummy_dictionary(), preprocess_summarization_data() (+13 more)
 
 ### Community 40 - "Community 40"
-Cohesion: 0.11
-Nodes (16): array(), client(), get_object_id(), plasma(), PlasmaArray, PlasmaStore, PlasmaView, Interface to write and read from shared memory. Whereas PlasmaArray writes to pl (+8 more)
+Cohesion: 0.08
+Nodes (18): array(), client(), get_object_id(), plasma(), PlasmaArray, PlasmaStore, PlasmaView, Interface to write and read from shared memory. Whereas PlasmaArray writes to pl (+10 more)
 
 ### Community 41 - "Community 41"
-Cohesion: 0.12
-Nodes (17): Transformers with convolutional context for ASR     https://arxiv.org/abs/1904., VGGTransformerModel, get_dummy_input(), base code to test FairseqEncoderDecoderModel (formally known as     `FairseqMod, base class to test FairseqEncoder, base class to test FairseqDecoder, TestFairseqDecoderBase, TestFairseqEncoderBase (+9 more)
+Cohesion: 0.13
+Nodes (15): get_dummy_input(), base code to test FairseqEncoderDecoderModel (formally known as     `FairseqMod, base class to test FairseqEncoder, base class to test FairseqDecoder, TestFairseqDecoderBase, TestFairseqEncoderBase, TestFairseqEncoderDecoderModelBase, TransformerDecoderTest (+7 more)
 
 ### Community 42 - "Community 42"
 Cohesion: 0.08
@@ -1216,8 +1226,8 @@ Cohesion: 0.07
 Nodes (11): FP16_Module, FP16_Optimizer, Zero fp32 and fp16 parameter grads., Clips fp32 master gradients via ``torch.nn.utils.clip_grad_norm``.          Ar, Returns a dict containing the current state of this :class:`FP16_Optimizer` inst, Loads a state_dict created by an earlier call to state_dict().          If ``fp, If no closure is supplied, :attr:`step` should be called after          ``fp16_, :attr:`backward` performs the following conceptual steps:          1. fp32_los (+3 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.19
-Nodes (21): InferConfig, OverrideConfig, CheckpointConfig, CommonConfig, CommonEvalConfig, DatasetConfig, DistributedTrainingConfig, EvalLMConfig (+13 more)
+Cohesion: 0.22
+Nodes (17): InferConfig, OverrideConfig, CheckpointConfig, CommonConfig, CommonEvalConfig, DatasetConfig, DistributedTrainingConfig, EvalLMConfig (+9 more)
 
 ### Community 48 - "Community 48"
 Cohesion: 0.08
@@ -1226,10 +1236,6 @@ Nodes (19): CenterCrop, Compose, compute_mask_indices(), find_runs(), Horizontal
 ### Community 49 - "Community 49"
 Cohesion: 0.05
 Nodes (34): add_args(), _calc_grad(), FairseqBMUF, optimizer(), optimizer_config(), Performs a single optimization step., Clears the gradients of all optimized parameters., Get the number of parameters updates. (+26 more)
-
-### Community 50 - "Community 50"
-Cohesion: 0.06
-Nodes (38): add_args(), create_lang_dictionary(), get_dataset_key(), get_langtok_index(), get_shard_id(), _get_shard_num_dict(), _lang_id(), load_all_dictionaries() (+30 more)
 
 ### Community 51 - "Community 51"
 Cohesion: 0.09
@@ -1257,7 +1263,7 @@ Nodes (14): Asserts last token of every sentence in x is EOS, This verifies that
 
 ### Community 57 - "Community 57"
 Cohesion: 0.03
-Nodes (13): ColorizeDataset, Adds 'colors' property to net input that is obtained from the provided color get, IdDataset, NumSamplesDataset, NumelDataset, OffsetTokensDataset, PrependDataset, RawLabelDataset (+5 more)
+Nodes (13): AppendTokenDataset, sizes(), ColorizeDataset, Adds 'colors' property to net input that is obtained from the provided color get, IdDataset, NumSamplesDataset, NumelDataset, OffsetTokensDataset (+5 more)
 
 ### Community 58 - "Community 58"
 Cohesion: 0.05
@@ -1272,8 +1278,8 @@ Cohesion: 0.15
 Nodes (34): aggregate(), get_active_aggregators(), get_meter(), get_meters(), get_smoothed_value(), get_smoothed_values(), load_state_dict(), log_custom() (+26 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 0.19
-Nodes (12): add_args(), base_architecture(), bert_base_architecture(), bert_large_architecture(), build_model(), MaskedLMEncoder, MaskedLMModel, Encoder for Masked Language Modelling. (+4 more)
+Cohesion: 0.1
+Nodes (20): FairseqEncoderModel, add_args(), base_architecture(), bert_base_architecture(), bert_large_architecture(), build_model(), MaskedLMEncoder, MaskedLMModel (+12 more)
 
 ### Community 62 - "Community 62"
 Cohesion: 0.13
@@ -1300,8 +1306,8 @@ Cohesion: 0.15
 Nodes (7): backward(), dynamicconvFunction, DynamicconvLayer, forward(), The conventional implementation of convolutions.         Unfolding the input by, Turn the convolution filters into band matrices and do matrix multiplication., Function
 
 ### Community 68 - "Community 68"
-Cohesion: 0.09
-Nodes (15): Get the current learning rate., Get the (non-wrapped) criterion instance., [deprecated] Get a specific meter by name., Get the number of parameters updates., Aggregate training time in seconds., Sync logging outputs across workers. all_gather_list_sync is         suitable w, Sync logging outputs across workers. fast_stat_sync_sum is         faster than, Check that grad norms are consistent across workers. (+7 more)
+Cohesion: 0.08
+Nodes (17): Get the current learning rate., Get the (non-wrapped) criterion instance., [deprecated] Get a specific meter by name., Get the number of parameters updates., Aggregate training time in seconds., Sync logging outputs across workers. all_gather_list_sync is         suitable w, Sync logging outputs across workers. fast_stat_sync_sum is         faster than, Check that grad norms are consistent across workers. (+9 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.06
@@ -1317,7 +1323,7 @@ Nodes (30): BitextOutput, BitextOutputFromGen, calc_length_from_frac(), get_dire
 
 ### Community 72 - "Community 72"
 Cohesion: 0.06
-Nodes (59): FairseqIncrementalDecoder, FairseqLanguageModel, add_args(), build_model(), default_architecture(), hf_gpt2_large(), hf_gpt2_medium(), hf_gpt2_xl() (+51 more)
+Nodes (58): FairseqLanguageModel, add_args(), build_model(), default_architecture(), hf_gpt2_large(), hf_gpt2_medium(), hf_gpt2_xl(), HuggingFaceGPT2Decoder (+50 more)
 
 ### Community 73 - "Community 73"
 Cohesion: 0.09
@@ -1328,8 +1334,8 @@ Cohesion: 0.07
 Nodes (33): CYTHON_UNUSED_VAR(), __Pyx_CyFunction_get_annotations(), __Pyx_CyFunction_get_annotations_locked(), __Pyx_CyFunction_get_closure(), __Pyx_CyFunction_get_code(), __Pyx_CyFunction_get_defaults(), __Pyx_CyFunction_get_defaults_locked(), __Pyx_CyFunction_get_dict() (+25 more)
 
 ### Community 75 - "Community 75"
-Cohesion: 0.05
-Nodes (38): FairseqOptimizer, Adam, FairseqAdam, FairseqAdamConfig, optimizer_config(), r"""Implements Adam algorithm.      This implementation is modified from torch, Performs a single optimization step.          Args:             closure (call, Adam optimizer for fairseq.      Important note: this optimizer corresponds to (+30 more)
+Cohesion: 0.11
+Nodes (18): CompositeLRScheduler, CompositeOptimizer, CompositeOptimizerConfig, FairseqCompositeOptimizer, OptimizerAndSchedulerConfig, param_groups(), Return the current learning rate., Return the LR scheduler state dict. (+10 more)
 
 ### Community 76 - "Community 76"
 Cohesion: 0.19
@@ -1369,7 +1375,7 @@ Nodes (23): add_args(), build_decoder(), build_encoder(), build_model(), Embeddi
 
 ### Community 85 - "Community 85"
 Cohesion: 0.1
-Nodes (10): BaseDecoder, BaseDecoder, FlashlightDecoderConfig, Decoder(), FairseqLM, FairseqLMDecoder, KenLMDecoder, Evaluate language model based on the current lm state and new word         Para (+2 more)
+Nodes (12): BaseDecoder, BaseDecoder, DecoderConfig, FlashlightDecoderConfig, Decoder(), FairseqLM, FairseqLMDecoder, KenLMDecoder (+4 more)
 
 ### Community 86 - "Community 86"
 Cohesion: 0.11
@@ -1400,24 +1406,24 @@ Cohesion: 0.29
 Nodes (10): DummyTask, get_dummy_dictionary(), get_dummy_task_and_parser(), Return a dummy task and argument parser, which can be used to     create a mode, source_dictionary(), target_dictionary(), test_export_transformer(), test_export_transformer_no_token_pos_emb() (+2 more)
 
 ### Community 93 - "Community 93"
-Cohesion: 0.17
-Nodes (7): check_diff(), diff_list(), get_directions(), main(), main(), main(), skip_check()
+Cohesion: 0.11
+Nodes (4): setup_registry(), main(), main(), skip_check()
 
 ### Community 94 - "Community 94"
 Cohesion: 0.16
 Nodes (26): backward_step(), evaluate(), evaluate_and_print_results(), forward_step(), get_batch(), get_learning_rate_scheduler(), get_masks_and_position_ids(), get_model() (+18 more)
 
 ### Community 95 - "Community 95"
-Cohesion: 0.21
-Nodes (5): gpt2_get_params_for_weight_decay_optimization(), GPT2Model, init_method_normal(), Init method based on normal distribution.      This is only used for embedding, GPT-2 Language model.      The output of the forward method are the logits (pa
+Cohesion: 0.09
+Nodes (9): DistributedDataParallel, gpt2_get_params_for_weight_decay_optimization(), GPT2Model, init_method_normal(), Init method based on normal distribution.      This is only used for embedding, GPT-2 Language model.      The output of the forward method are the logits (pa, BertModel, get_params_for_weight_decay_optimization() (+1 more)
 
 ### Community 96 - "Community 96"
-Cohesion: 0.12
-Nodes (18): BertAttention, BertIntermediate, BertLayer, BertLayerNorm, BertOutput, BertSelfOutput, from_dict(), from_json_file() (+10 more)
+Cohesion: 0.18
+Nodes (13): BertForQuestionAnswering, BertSelfOutput, from_dict(), from_json_file(), from_pretrained(), gelu(), load_tf_weights_in_bert(), BERT model for Question Answering (span extraction).     This module is compose (+5 more)
 
 ### Community 97 - "Community 97"
-Cohesion: 0.09
-Nodes (29): add_args(), base_architecture(), build_model(), DummyEncoder, DummyModel, FairseqDecoder, add_args(), base_architecture() (+21 more)
+Cohesion: 0.14
+Nodes (23): add_args(), base_architecture(), build_model(), ConvTBC(), Embedding(), fconv_self_att_wp(), FConvDecoder, FConvEncoder (+15 more)
 
 ### Community 98 - "Community 98"
 Cohesion: 0.09
@@ -1428,8 +1434,8 @@ Cohesion: 0.07
 Nodes (27): Citation, code:bibtex (@article{fan2020training,), code:bash (fairseq-train --task language_modeling /path/to/wikitext-103), code:block2 (--quant-noise-scalar 0.5), code:block3 (--quant-noise-pq 0.1 --quant-noise-pq-block-size 8), code:python (from fairseq.modules.quantization.pq import quantize_model_,), code:bash (TOTAL_UPDATES=125000), code:bash (TOTAL_NUM_UPDATES=2036) (+19 more)
 
 ### Community 100 - "Community 100"
-Cohesion: 0.16
-Nodes (12): cli_main(), data_parallel_rank(), data_parallel_world_size(), get_wer_file(), hydra_main(), InferenceProcessor, main(), parse_wer() (+4 more)
+Cohesion: 0.14
+Nodes (15): DecoderConfig, FlashlightDecoderConfig, cli_main(), data_parallel_rank(), data_parallel_world_size(), DecodingConfig, get_wer_file(), hydra_main() (+7 more)
 
 ### Community 101 - "Community 101"
 Cohesion: 0.13
@@ -1468,8 +1474,8 @@ Cohesion: 0.1
 Nodes (14): choose_CLIP_model(), _debug(), IJCAI25testaudio, load_dict_db_from_json(), _make_feature_path(), _needs_rebuild_dict_db(), _normalize_rel_path(), pad_tensor_to_multiple_of_8() (+6 more)
 
 ### Community 110 - "Community 110"
-Cohesion: 0.11
-Nodes (19): build_precompute_loader(), get_cpu_rss_mb(), _get_cpu_rss_mb_windows(), get_cuda_mem_mb(), get_loader_queue_size(), is_pin_memory_ok(), set_pin_memory_ok(), Audio feature precompute with safe workers and logging. (+11 more)
+Cohesion: 0.06
+Nodes (28): build_precompute_loader(), get_cpu_rss_mb(), _get_cpu_rss_mb_windows(), get_cuda_mem_mb(), get_loader_queue_size(), is_pin_memory_ok(), A batch collator that does nothing, A batch collator that does nothing (+20 more)
 
 ### Community 111 - "Community 111"
 Cohesion: 0.12
@@ -1500,8 +1506,8 @@ Cohesion: 0.12
 Nodes (15): DenoisingTask, add_args(), DenoisingTask, Load a given dataset split.          Args:             split (str): name of t, Generate batches for inference. We assume that the input begins with a, Return the max sentence length allowed by the task., Denoising task for applying sequence to sequence denoising. (ie. BART), setup_task() (+7 more)
 
 ### Community 118 - "Community 118"
-Cohesion: 0.1
-Nodes (13): Translation (Sequence Generation) task for Levenshtein Transformer     See `"Le, Load a given dataset split.          Args:             split (str): name of t, TranslationLevenshteinConfig, TranslationLevenshteinTask, load_langpair_dataset(), Translate from one (source) language to another (target) language.      Args:, Load a given dataset split.          Args:             split (str): name of t, Return the max sentence length allowed by the task. (+5 more)
+Cohesion: 0.11
+Nodes (13): add_args(), Translate from source language to target language with a model initialized with, Load a given dataset split.          Args:             split (str): name of t, TranslationFromPretrainedBARTTask, load_langpair_dataset(), Translate from one (source) language to another (target) language.      Args:, Load a given dataset split.          Args:             split (str): name of t, Return the max sentence length allowed by the task. (+5 more)
 
 ### Community 119 - "Community 119"
 Cohesion: 0.07
@@ -1552,8 +1558,8 @@ Cohesion: 0.14
 Nodes (35): _append_results(), _clear_cached_data(), _collect_missing_inputs(), _compute_metrics(), _dataset_name_from_metadata(), _discover_metadata_files(), _ensure_dir(), _ensure_results_header() (+27 more)
 
 ### Community 131 - "Community 131"
-Cohesion: 0.05
-Nodes (25): dataset for wikipedia with arguments configured for convenience  	command line, dataset for webtext with arguments configured for convenience  	command line u, webtext, wikipedia, ConcatDataset, csv_dataset, cummulative_sizes(), cumsum() (+17 more)
+Cohesion: 0.06
+Nodes (17): ConcatDataset, cummulative_sizes(), cumsum(), GPT2Dataset, json_dataset, lens(), Dataset wrapper to access a subset of another dataset.     Purpose: useful to i, Split a dataset into subsets given proportions of how     much to allocate per (+9 more)
 
 ### Community 132 - "Community 132"
 Cohesion: 0.16
@@ -1584,8 +1590,8 @@ Cohesion: 0.09
 Nodes (11): Log intermediate stats to tensorboard., Print end-of-epoch stats., Log latest configuration., Log to Weights & Biases., Log intermediate stats to tensorboard., Print end-of-epoch stats., Log latest configuration., Log intermediate stats to AzureML (+3 more)
 
 ### Community 139 - "Community 139"
-Cohesion: 0.08
-Nodes (13): can_reuse_epoch_itr_across_epochs(), CollateFormat, default_virtual_size_func(), get_time_gap(), Merge a list of samples to form a mini-batch., Filter a list of sample indices. Remove those that are longer             than, Samples from multiple sub-datasets according to given sampling ratios.     Args, SampledMultiDataset (+5 more)
+Cohesion: 0.16
+Nodes (9): can_reuse_epoch_itr_across_epochs(), CollateFormat, default_virtual_size_func(), get_time_gap(), sizes(), Samples from multiple sub-datasets according to sampling ratios        using vi, SampledMultiEpochDataset, sizes() (+1 more)
 
 ### Community 140 - "Community 140"
 Cohesion: 0.13
@@ -1604,8 +1610,8 @@ Cohesion: 0.14
 Nodes (10): LanguageModelingConfig, LanguageModelingTask, Train a language model.      Args:         dictionary (~fairseq.data.Dictiona, Load a given dataset split.          Args:             split (str): name of t, Generate batches for inference. We prepend an eos token to src_tokens         (, setup_dictionary(), setup_task(), source_dictionary() (+2 more)
 
 ### Community 144 - "Community 144"
-Cohesion: 0.13
-Nodes (7): OnlineBackTranslationTask, Load a given dataset split.          Args:             split (str): name of t, The training dataset is made of backtranslation dataset and denoising dataset., The BT dataset is generated with (tgt, tgt) pairs.         The actual translati, Classic denoising dataset, Return the max sentence length allowed by the task., * WARNING: smp is modified in place.         * At the start of this function, `
+Cohesion: 0.11
+Nodes (24): add_args(), add_secial_tokens_to_dict_and_model(), assert_weights_have_changed(), dictionary(), extend_embedding(), from_string(), _lang_token(), _lang_token_index() (+16 more)
 
 ### Community 145 - "Community 145"
 Cohesion: 0.07
@@ -1616,12 +1622,12 @@ Cohesion: 0.11
 Nodes (9): collate(), MonolingualDataset, Return the number of tokens for a set of positions defined by indices., Merge a list of samples to form a mini-batch.          Args:             samp, Return the number of tokens in a sample. This value is used to         enforce, Return an example's size as a float or tuple. This value is used when         f, Return an ordered list of indices. Batches will be constructed based         on, A wrapper around torch.utils.data.Dataset for monolingual data.      Args: (+1 more)
 
 ### Community 147 - "Community 147"
-Cohesion: 0.09
-Nodes (11): bert_sentencepair_dataset, GPT2Dataset, Dataset containing sentencepairs for BERT training. Each index corresponds to a, split document into sentences, tokenize sentence and get token types, gets text of document corresponding to idx, fetches a random sentencepair corresponding to rng state similar to         htt, Truncate sequence pair according to original BERT implementation:         https (+3 more)
+Cohesion: 0.13
+Nodes (10): bert_sentencepair_dataset, Dataset containing sentencepairs for BERT training. Each index corresponds to a, split document into sentences, tokenize sentence and get token types, gets text of document corresponding to idx, fetches a random sentencepair corresponding to rng state similar to         htt, Truncate sequence pair according to original BERT implementation:         https, helper function to mask `idx` token from `tokens` according to         section (+2 more)
 
 ### Community 148 - "Community 148"
-Cohesion: 0.13
-Nodes (10): DynamicConv(), DynamicConv1dTBC, in_proj(), Linear(), Assuming the input, x, of the shape T x B x C and producing an output in the sha, The conventional implementation of convolutions.         Unfolding the input by, Turn the convolution filters into band matrices and do matrix multiplication., Dynamic lightweight convolution taking T x B x C inputs     Args:         inpu (+2 more)
+Cohesion: 0.26
+Nodes (5): DynamicConv1dTBC, Assuming the input, x, of the shape T x B x C and producing an output in the sha, The conventional implementation of convolutions.         Unfolding the input by, Turn the convolution filters into band matrices and do matrix multiplication., Dynamic lightweight convolution taking T x B x C inputs     Args:         inpu
 
 ### Community 149 - "Community 149"
 Cohesion: 0.16
@@ -1636,15 +1642,15 @@ Cohesion: 0.11
 Nodes (11): ConvBackbone, ConvTransformerBackbone, A backbone that combines convolutions with transformers, A backbone that with only conv, ConvBlock, get_sinusoid_encoding(), Sinusoid position encoding table, A simple (post layer norm) Transformer block     Modified from https://github.c (+3 more)
 
 ### Community 152 - "Community 152"
-Cohesion: 0.13
-Nodes (8): Upgrade a (possibly old) state dict for new versions of fairseq., Upgrade a (possibly old) state dict for new versions of fairseq., Transformer decoder consisting of *args.decoder_layers* layers. Each layer, Args:             prev_output_tokens (LongTensor): previous decoder outputs of, Similar to *forward* but only return features.          Includes several featu, Project features to the vocabulary size., Maximum output length supported by the decoder., TransformerDecoder
+Cohesion: 0.17
+Nodes (6): Transformer decoder consisting of *args.decoder_layers* layers. Each layer, Args:             prev_output_tokens (LongTensor): previous decoder outputs of, Similar to *forward* but only return features.          Includes several featu, Project features to the vocabulary size., Maximum output length supported by the decoder., TransformerDecoder
 
 ### Community 153 - "Community 153"
-Cohesion: 0.12
-Nodes (9): backward(), forward(), LogSumExpMoE, Standard LogSumExp forward pass, but use *posterior* for the backward.      Se, MeanPoolGatingNetwork, A simple mean-pooling gating network for selecting experts.      This module a, Translation task for Mixture of Experts (MoE) models.      See `"Mixture Model, TranslationMoEConfig (+1 more)
+Cohesion: 0.11
+Nodes (10): backward(), forward(), LogSumExpMoE, Standard LogSumExp forward pass, but use *posterior* for the backward.      Se, MeanPoolGatingNetwork, A simple mean-pooling gating network for selecting experts.      This module a, Translation task for Mixture of Experts (MoE) models.      See `"Mixture Model, TranslationMoEConfig (+2 more)
 
 ### Community 154 - "Community 154"
-Cohesion: 0.09
+Cohesion: 0.1
 Nodes (10): run preprocessing and encode text as Ids, encode text using text tokenizer and shift Id values for command tokens, encode text as tokens using text tokenizer, Tokenization object to hold tokenization, (processed text),and original     tex, convert text to sentencepiece Ids, convert text to sentencepiece tokens, convert text to wordpiece Ids, convert wordpiece token to Id (+2 more)
 
 ### Community 155 - "Community 155"
@@ -1668,12 +1674,12 @@ Cohesion: 0.37
 Nodes (20): add_checkpoint_args(), add_common_eval_args(), add_dataset_args(), add_distributed_training_args(), add_eval_lm_args(), add_generation_args(), add_interactive_args(), add_model_args() (+12 more)
 
 ### Community 160 - "Community 160"
-Cohesion: 0.21
-Nodes (7): add_args(), build_model(), src_tokens: padded tensor (B, T, C * feat)         src_lengths: tensor of origi, Maximum input length supported by the encoder., w2l_conv_glu_enc(), W2lConvGluEncoder, W2lConvGluEncoderModel
+Cohesion: 0.13
+Nodes (10): add_args(), get_time_gap(), Load a given dataset split.          Args:             split (str): name of t, Return the max sentence length allowed by the task., Get an iterator that yields batches of data from the given dataset.          A, Translate from one (source) language to another (target) language.      Args:, setup_task(), source_dictionary() (+2 more)
 
 ### Community 161 - "Community 161"
 Cohesion: 0.22
-Nodes (8): device(), CamembertModel, from_pretrained(), hub_models(), from_pretrained(), hub_models(), XLMRModel, RobertaModel
+Nodes (8): device(), CamembertModel, from_pretrained(), hub_models(), from_pretrained(), GottbertModel, hub_models(), RobertaModel
 
 ### Community 162 - "Community 162"
 Cohesion: 0.09
@@ -1688,8 +1694,8 @@ Cohesion: 0.1
 Nodes (19): add_args(), aggregate_logging_outputs(), build_criterion(), FairseqCriterion, LegacyFairseqCriterion, logging_outputs_can_be_summed(), Compute the loss for the given sample.          Returns a tuple with three ele, reduce_metrics() (+11 more)
 
 ### Community 165 - "Community 165"
-Cohesion: 0.28
-Nodes (17): add_args(), add_secial_tokens_to_dict_and_model(), assert_weights_have_changed(), dictionary(), extend_embedding(), from_string(), _lang_token(), _lang_token_index() (+9 more)
+Cohesion: 0.27
+Nodes (20): add_args(), create_lang_dictionary(), get_dataset_key(), get_langtok_index(), get_shard_id(), _get_shard_num_dict(), _lang_id(), load_all_dictionaries() (+12 more)
 
 ### Community 166 - "Community 166"
 Cohesion: 0.08
@@ -1752,8 +1758,8 @@ Cohesion: 0.15
 Nodes (13): add_args(), base_laser_transformer_architecture(), build_model(), LaserTransformerDecoder, LaserTransformerEncoder, LaserTransformerModel, Similar to *forward* but only return features.          Includes several featu, Args:             prev_output_tokens (LongTensor): previous decoder outputs of (+5 more)
 
 ### Community 181 - "Community 181"
-Cohesion: 0.19
-Nodes (9): add_args(), DummyDataset, DummyMTTask, Load a given dataset split.         Args:             split (str): name of the, setup_task(), sizes(), source_dictionary(), supports_prefetch() (+1 more)
+Cohesion: 0.18
+Nodes (10): add_args(), DummyDataset, DummyMTTask, Load a given dataset split.         Args:             split (str): name of the, setup_task(), sizes(), source_dictionary(), supports_prefetch() (+2 more)
 
 ### Community 182 - "Community 182"
 Cohesion: 0.1
@@ -1777,7 +1783,7 @@ Nodes (8): Ordered indices for batching., Filter each sub-dataset independently,
 
 ### Community 187 - "Community 187"
 Cohesion: 0.11
-Nodes (7): AV1M_test_dataset, AV1M_trainval_dataset, AVLips_Dataset, FakeAVCeleb_Dataset, load_data(), Dataset, WaveformDataset
+Nodes (7): AV1M_test_dataset, AV1M_trainval_dataset, AVLips_Dataset, FakeAVCeleb_Dataset, load_data(), Dataset, AudioPrecomputeDataset
 
 ### Community 188 - "Community 188"
 Cohesion: 0.09
@@ -1788,16 +1794,16 @@ Cohesion: 0.16
 Nodes (7): can_reuse_epoch_itr_across_epochs(), ConcatDataset, cumsum(), Return an example's size as a float or tuple., Returns indices sorted by length. So less padding is needed., sizes(), supports_prefetch()
 
 ### Community 190 - "Community 190"
-Cohesion: 0.11
-Nodes (10): BlockPairDataset, Give a list of evenly cut blocks/sentences, pair these sentences with 50%, Build index mapping block indices to the underlying dataset indices, Break a Dataset of tokens into sentence pair blocks for next sentence        pr, Go through a single document and genrate sentence paris from it, Generate a random integer which is not in skip_ids. Sample range is [0, total), Trancate a pair of sentence to limit total length under max_num_tokens, Cut a sentence based on the numbers of tokens to be cut from beginning and end (+2 more)
+Cohesion: 0.14
+Nodes (9): BlockPairDataset, Give a list of evenly cut blocks/sentences, pair these sentences with 50%, Build index mapping block indices to the underlying dataset indices, Break a Dataset of tokens into sentence pair blocks for next sentence        pr, Go through a single document and genrate sentence paris from it, Generate a random integer which is not in skip_ids. Sample range is [0, total), Trancate a pair of sentence to limit total length under max_num_tokens, Cut a sentence based on the numbers of tokens to be cut from beginning and end (+1 more)
 
 ### Community 191 - "Community 191"
 Cohesion: 0.32
 Nodes (16): always_call_state_dict_during_save_checkpoint(), _catalog_shared_params(), checkpoint_suffix(), criterion(), data_parallel_process_group(), data_parallel_rank(), data_parallel_world_size(), _get_module_by_path() (+8 more)
 
 ### Community 192 - "Community 192"
-Cohesion: 0.16
-Nodes (5): _append_prev_key_padding_mask(), MultiheadAttention, Input shape: Time x Batch x Channel          Args:             key_padding_ma, Multi-headed attention.      See "Attention Is All You Need" for more details., reorder_incremental_state()
+Cohesion: 0.13
+Nodes (4): Merge a list of samples to form a mini-batch., Filter a list of sample indices. Remove those that are longer             than, Samples from multiple sub-datasets according to given sampling ratios.     Args, SampledMultiDataset
 
 ### Community 193 - "Community 193"
 Cohesion: 0.17
@@ -1836,8 +1842,8 @@ Cohesion: 0.19
 Nodes (15): backward(), forward(), Helper function for the cross entropy., vocab_parallel_cross_entropy(), _VocabParallelCrossEntropy, divide(), ensure_divisibility(), Ensure that numerator is divisible by the denominator. (+7 more)
 
 ### Community 202 - "Community 202"
-Cohesion: 0.08
-Nodes (14): AVHubertConfig, AVHubertModel, build_model(), Upgrade a (possibly old) state dict for new versions of fairseq., Upgrade a (possibly old) state dict for new versions of fairseq., output layer is 1-based, output layer is 1-based, SubModel (+6 more)
+Cohesion: 0.09
+Nodes (12): AVHubertConfig, AVHubertModel, build_model(), output layer is 1-based, output layer is 1-based, SubModel, BasicBlock, conv3x3() (+4 more)
 
 ### Community 203 - "Community 203"
 Cohesion: 0.18
@@ -1888,8 +1894,8 @@ Cohesion: 0.16
 Nodes (3): LMContextWindowDataset, Wraps a MonolingualDataset and provides more context for evaluation.      Each, supports_prefetch()
 
 ### Community 215 - "Community 215"
-Cohesion: 0.06
-Nodes (29): cal_gcmvn_stats(), create_zip(), extract_fbank_features(), filter_manifest_df(), gen_config_yaml(), gen_vocab(), get_zip_manifest(), is_npy_data() (+21 more)
+Cohesion: 0.17
+Nodes (17): cal_gcmvn_stats(), create_zip(), extract_fbank_features(), filter_manifest_df(), gen_vocab(), get_zip_manifest(), is_npy_data(), load_df_from_tsv() (+9 more)
 
 ### Community 216 - "Community 216"
 Cohesion: 0.16
@@ -1940,8 +1946,8 @@ Cohesion: 0.25
 Nodes (16): cli_main(), get_symbols_to_strip_from_output(), main(), comp_avg_seg_dur(), comp_entropy(), comp_joint_prob(), comp_norm_mutual_info(), comp_purity() (+8 more)
 
 ### Community 228 - "Community 228"
-Cohesion: 0.12
-Nodes (8): MaskedLMDataset, Mask tokens for Masked Language Model training         Samples mask_ratio token, Does the heavy lifting for creating a batch from the input list of         exam, A wrapper Dataset for masked language modelling. The dataset     wraps around T, Merge a list of samples to form a mini-batch.          Args:             samp, Return the number of tokens in a sample. This value is used to         enforce, Return an example's size as a float or tuple. This value is used when         f, Return an ordered list of indices. Batches will be constructed based         on
+Cohesion: 0.09
+Nodes (10): MaskedLMDataset, Mask tokens for Masked Language Model training         Samples mask_ratio token, Does the heavy lifting for creating a batch from the input list of         exam, A wrapper Dataset for masked language modelling. The dataset     wraps around T, # TODO: Can we add deteminism without this constraint?, Merge a list of samples to form a mini-batch.          Args:             samp, Return the number of tokens in a sample. This value is used to         enforce, Return an example's size as a float or tuple. This value is used when         f (+2 more)
 
 ### Community 229 - "Community 229"
 Cohesion: 0.12
@@ -1960,12 +1966,12 @@ Cohesion: 0.1
 Nodes (12): MaskedConv1D, Masked 1D convolution. Interface remains the same as Conv1d.     Only support a, PtTransformerClsHead, PtTransformerRegHead, 1D Conv heads for classification, Shared 1D Conv heads for regression     Simlar logic as PtTransformerClsHead wi, make_backbone(), make_generator() (+4 more)
 
 ### Community 233 - "Community 233"
-Cohesion: 0.13
+Cohesion: 0.12
 Nodes (9): FairseqDecoder, Upgrade old state dicts to work with newer code., Base class for decoders., Args:             prev_output_tokens (LongTensor): shifted output tokens of sha, Returns:             tuple:                 - the decoder's features of shape, Project features to the default output size, e.g., vocabulary size.          A, Get normalized probabilities (or log probs) from a net's output., Get normalized probabilities (or log probs) from a net's output. (+1 more)
 
 ### Community 234 - "Community 234"
-Cohesion: 0.08
-Nodes (13): CompositeEncoder, A wrapper around a dictionary of :class:`FairseqEncoder` objects.      We run, Args:             src_tokens (LongTensor): tokens in the source language of sha, Reorder encoder output according to new_order., FairseqEncoder, forward_non_torchscript(), Base class for encoders., Args:             src_tokens (LongTensor): tokens in the source language of sha (+5 more)
+Cohesion: 0.06
+Nodes (21): CompositeEncoder, A wrapper around a dictionary of :class:`FairseqEncoder` objects.      We run, Args:             src_tokens (LongTensor): tokens in the source language of sha, Reorder encoder output according to new_order., DistributedFairseqModel(), Wrap a *model* to support distributed data parallel training.      This is sim, FairseqEncoder, forward_non_torchscript() (+13 more)
 
 ### Community 235 - "Community 235"
 Cohesion: 0.1
@@ -1980,8 +1986,8 @@ Cohesion: 0.14
 Nodes (14): add_args(), base_architecture(), build_model(), model_parallel_roberta_base_architecture(), model_parallel_roberta_large_architecture(), model_parallel_roberta_postnorm_architecture(), model_parallel_roberta_v1_architecture(), ModelParallelRobertaClassificationHead (+6 more)
 
 ### Community 238 - "Community 238"
-Cohesion: 0.54
-Nodes (10): corpus_bleu(), dictolist(), intra_ref(), load_ref(), load_sys(), main(), merge(), multi_ref() (+2 more)
+Cohesion: 0.13
+Nodes (11): conversion_helper(), fp16_to_fp32(), fp32_to_fp16(), Apply conversion to val. Recursively apply conversion if `val` is a nested tuple, Convert fp32 `val` to fp16, Convert fp16 `val` to fp32, # TODO:  Update overflow check + downscale to use Carl's fused kernel., loss_scale() (+3 more)
 
 ### Community 239 - "Community 239"
 Cohesion: 0.14
@@ -1992,7 +1998,7 @@ Cohesion: 0.1
 Nodes (17): code:block1 (for LANG in $SRC_LANG $TGT_LANG; do), code:block2 (fairseq-preprocess --srcdict $MODEL_DIR/dict.$SRC_LANG.txt -), code:block3 (CUDA_VISIBLE_DEVICES=$GPU fairseq-generate $TMP/bin --path $), code:block4 (sed -r 's/(@@ )| (@@ ?$)//g' < $TMP/mt.out | perl $MOSES_DEC), code:block5 (python ${SCRIPTS}/scripts/uncertainty/repeat_lines.py -i $TM), code:block6 (CUDA_VISIBLE_DEVICES=${GPU} fairseq-generate ${TMP}/bin-repe), code:block7 (python $SCRIPTS/scripts/uncertainty/aggregate_scores.py -i $), code:block8 (CUDA_VISIBLE_DEVICES=${GPU} fairseq-generate ${TMP}/bin-repe) (+9 more)
 
 ### Community 241 - "Community 241"
-Cohesion: 0.15
+Cohesion: 0.16
 Nodes (8): VGG + Transformer encoder, constructor for VGGTransformerEncoder          Args:             - input_feat, src_tokens: padded tensor (B, T, C * feat)         src_lengths: tensor of origi, transformer_context can be the following:         -   None; indicates no contex, parsing transformer sampling configuration          Args:             - trans, embedding is a (T, B, D) tensor         padding_mask is a (B, T) tensor or None, create attention mask according to sequence lengths and transformer         con, VGGTransformerEncoder
 
 ### Community 242 - "Community 242"
@@ -2000,12 +2006,12 @@ Cohesion: 0.15
 Nodes (10): postprocessing(), dict_to_segs(), evaluate_video(), MetricCollector, segment_iou(), batched_nms(), NMSop, blur localization results by incorporating side segs.         this is known as (+2 more)
 
 ### Community 243 - "Community 243"
-Cohesion: 0.08
-Nodes (16): BaseFairseqModel, Copies parameters and buffers from *state_dict* into this module and         it, Upgrade old state dicts to work with newer code., Upgrade old state dicts to work with newer code.          Args:             s, State from trainer to pass along to model at every update., Prepare model for inference., Legacy entry point to optimize model for faster generation.         Prefer prep, Make model exportable via ONNX trace. (+8 more)
+Cohesion: 0.29
+Nodes (4): Copies parameters and buffers from *state_dict* into this module and         it, Upgrade old state dicts to work with newer code., Upgrade old state dicts to work with newer code.          Args:             s, Copies parameters and buffers from *state_dict* into this module and         it
 
 ### Community 244 - "Community 244"
-Cohesion: 0.12
-Nodes (9): FairseqMultiModel, Maximum length supported by the model., Maximum length supported by the decoder., Base class for combining multiple encoder-decoder models., Maximum length supported by the model., Maximum length supported by the decoder., Maximum length supported by the model., Maximum length supported by the decoder. (+1 more)
+Cohesion: 0.14
+Nodes (7): Maximum length supported by the model., Maximum length supported by the decoder., Maximum length supported by the model., Maximum length supported by the decoder., Maximum length supported by the model., Maximum length supported by the decoder., Maximum length supported by the model.
 
 ### Community 245 - "Community 245"
 Cohesion: 0.23
@@ -2014,10 +2020,6 @@ Nodes (8): Adafactor, add_args(), FairseqAdafactor, optimizer_config(), Performs
 ### Community 246 - "Community 246"
 Cohesion: 0.25
 Nodes (8): Model, setup model, criterion and optimizer based on input args, Do forward, backward and parameter update., setup_args(), setup_model_loss_criterion(), single_gpu_training(), TestBMUF, train_step()
-
-### Community 247 - "Community 247"
-Cohesion: 0.13
-Nodes (4): DynamicLossScaler, LossScaler, Class that manages a static loss scale.  This class is intended to interact with, Class that manages dynamic loss scaling.  It is recommended to use :class:`Dynam
 
 ### Community 248 - "Community 248"
 Cohesion: 0.2
@@ -2033,15 +2035,15 @@ Nodes (11): _chunk(), LocalMaskedMHCA, _mask_invalid_locations(), _pad_and_diago
 
 ### Community 251 - "Community 251"
 Cohesion: 0.14
-Nodes (8): DistributedFairseqModel(), Wrap a *model* to support distributed data parallel training.      This is sim, build_model(), import_models(), New model types can be added to fairseq with the :func:`register_model`     fun, New model architectures can be added to fairseq with the     :func:`register_mo, register_model(), register_model_architecture()
+Nodes (9): dataset for wikipedia with arguments configured for convenience  	command line, dataset for webtext with arguments configured for convenience  	command line u, webtext, wikipedia, csv_dataset, Class for loading datasets from csv files.     Purpose: Useful for loading data, process+tokenize string and return string,label,and stringlen, given a generator of metrics for each of the data points X_i,             write (+1 more)
 
 ### Community 252 - "Community 252"
 Cohesion: 0.3
 Nodes (15): backward(), checkpoint_wrapper(), _checkpointed_forward(), CheckpointFunction, forward(), pack_kwargs(), Usage::          x = torch.Tensor([1])         y = torch.Tensor([2]), Similar to the torch version, but support non-Tensor outputs.      The caller (+7 more)
 
 ### Community 253 - "Community 253"
-Cohesion: 0.1
-Nodes (4): ModelParallelTransformerDecoderLayer, ModelParallelTransformerEncoderLayer, Encoder layer block over multiple gpus.      See "Megatron-LM: https://arxiv.o, Decoder layer block.      See "Megatron-LM: https://arxiv.org/pdf/1909.08053.p
+Cohesion: 0.05
+Nodes (14): _append_prev_key_padding_mask(), ModelParallelMultiheadAttention, Input shape: Time x Batch x Channel          Args:             key_padding_ma, Model parallel Multi-headed attention.     This performs the Multi-headed atten, Reorder buffered internal state (for incremental generation)., reorder_incremental_state(), Sparse Multi-Headed Attention.      "Generating Long Sequences with Sparse Tra, SparseMultiheadAttention (+6 more)
 
 ### Community 254 - "Community 254"
 Cohesion: 0.32
@@ -2060,8 +2062,8 @@ Cohesion: 0.2
 Nodes (9): build_model(), JoinSegmenter, RandomSegmenter, SegmentationConfig, SegmentationType, Segmenter, UniformRandomJoinSegmenter, UniformRandomSegmenter (+1 more)
 
 ### Community 259 - "Community 259"
-Cohesion: 0.17
-Nodes (4): BertModel, get_params_for_weight_decay_optimization(), BertForMaskedLM, BERT model with the masked language modeling head.     This module comprises th
+Cohesion: 0.22
+Nodes (10): Adam, FairseqAdam, FairseqAdamConfig, optimizer_config(), r"""Implements Adam algorithm.      This implementation is modified from torch, Performs a single optimization step.          Args:             closure (call, Adam optimizer for fairseq.      Important note: this optimizer corresponds to, Reduce Params is only used during BMUF distributed training. (+2 more)
 
 ### Community 260 - "Community 260"
 Cohesion: 0.22
@@ -2100,8 +2102,8 @@ Cohesion: 0.25
 Nodes (9): calculate_banned_tokens(), call_cuda_extension(), is_cuda_extension_usable(), NGramRepeatBlock, Check whether ngram_repeat_block_cuda is built properly, Wrapper class for calling ngram_repeat_block cuda extension, Args:             tokens(Tensor): Input tokens(Bsz*beam, seq_len), For each hypothesis generate a list of previous ngrams and set associated lprobs (+1 more)
 
 ### Community 270 - "Community 270"
-Cohesion: 0.15
-Nodes (9): main(), process_video(), FusionModel, main(), Save model checkpoint, Runs a single epoch for training or validation., run_epoch(), save_checkpoint() (+1 more)
+Cohesion: 0.1
+Nodes (12): FeatureDataset, Multi-worker data partition, main(), process_video(), FusionModel, main(), Save model checkpoint, Runs a single epoch for training or validation. (+4 more)
 
 ### Community 271 - "Community 271"
 Cohesion: 0.22
@@ -2172,8 +2174,8 @@ Cohesion: 0.13
 Nodes (15): __Pyx_BufFmt_Init(), __pyx_check_strides(), __pyx_check_suboffsets(), __Pyx__GetBufferAndValidate(), __Pyx_init_memviewslice(), __pyx_memoryview_copy_new_contig(), __Pyx_PyObject_to_MemoryviewSlice_ds_nn_int32_t(), __Pyx_PyObject_to_MemoryviewSlice_ds_nn_int64_t() (+7 more)
 
 ### Community 289 - "Community 289"
-Cohesion: 0.27
-Nodes (3): FeatureDataset, Multi-worker data partition, IterableDataset
+Cohesion: 0.24
+Nodes (6): add_args(), base_architecture(), build_model(), DummyEncoder, DummyModel, FairseqDecoder
 
 ### Community 290 - "Community 290"
 Cohesion: 0.24
@@ -2200,8 +2202,8 @@ Cohesion: 0.21
 Nodes (4): CharacterTokenEmbedder, Highway, padding_idx(), A `Highway layer <https://arxiv.org/abs/1505.00387>`_.     Adopted from the All
 
 ### Community 296 - "Community 296"
-Cohesion: 0.18
-Nodes (4): BertEmbeddings, BertEncoder, BertPooler, Construct the embeddings from word, position and token_type embeddings.
+Cohesion: 0.12
+Nodes (9): BertAttention, BertEmbeddings, BertEncoder, BertIntermediate, BertLayer, BertOutput, BertPooler, normal_init_method() (+1 more)
 
 ### Community 297 - "Community 297"
 Cohesion: 0.13
@@ -2224,8 +2226,8 @@ Cohesion: 0.18
 Nodes (6): get_model(), seed_everything(), check_complete(), Experiment, get_filename(), get_job_info()
 
 ### Community 302 - "Community 302"
-Cohesion: 0.13
-Nodes (8): convert_tf_example_to_torch_tensors(), _multiproc_iter(), MultiprocessLoader, Decodes a BERT TF record to a TF example., Record2Example, TFRecordDataLoader, NLTKTokenizer, object
+Cohesion: 0.23
+Nodes (7): convert_tf_example_to_torch_tensors(), _multiproc_iter(), MultiprocessLoader, Decodes a BERT TF record to a TF example., Record2Example, TFRecordDataLoader, object
 
 ### Community 303 - "Community 303"
 Cohesion: 0.17
@@ -2248,8 +2250,8 @@ Cohesion: 0.38
 Nodes (13): check_train_all(), check_train_pairs(), check_train_sentences(), count_train_in_other_set(), get_all_test_data(), get_messed_up_test_pairs(), load_langs(), load_pairs() (+5 more)
 
 ### Community 308 - "Community 308"
-Cohesion: 0.19
-Nodes (6): Truncate feats and time stamps in a dict item      data_dict = {'video_id', Truncate feats and time stamps in a dict item      data_dict = {'video_id', truncate_feats(), IJCAI25, 有限差分滤波器，计算它相对于列的一阶导数。         win: 滤波器组的系数, 有限差分滤波器，计算它相对于列的一阶导数。         win: 滤波器组的系数
+Cohesion: 0.17
+Nodes (8): Truncate feats and time stamps in a dict item      data_dict = {'video_id', Truncate feats and time stamps in a dict item      data_dict = {'video_id', set_pin_memory_ok(), truncate_feats(), IJCAI25, 有限差分滤波器，计算它相对于列的一阶导数。         win: 滤波器组的系数, Audio feature precompute with safe workers and logging., 有限差分滤波器，计算它相对于列的一阶导数。         win: 滤波器组的系数
 
 ### Community 309 - "Community 309"
 Cohesion: 0.23
@@ -2280,8 +2282,8 @@ Cohesion: 0.3
 Nodes (8): Adamax, add_args(), FairseqAdamax, optimizer_config(), Performs a single optimization step.          Args:             closure (call, Implements Adamax algorithm (a variant of Adam based on infinity norm).      I, supports_flat_params(), supports_memory_efficient_fp16()
 
 ### Community 316 - "Community 316"
-Cohesion: 0.05
-Nodes (29): DynamicLossScaler, build_fp32_params(), build_optimizer(), FP16Optimizer, _FP16OptimizerMixin, has_flat_params(), lr_scheduler(), MemoryEfficientFP16Optimizer (+21 more)
+Cohesion: 0.23
+Nodes (11): build_fp32_params(), build_optimizer(), FP16Optimizer, has_flat_params(), lr_scheduler(), MemoryEfficientFP16Optimizer, optimizer(), optimizer_config() (+3 more)
 
 ### Community 317 - "Community 317"
 Cohesion: 0.26
@@ -2296,20 +2298,20 @@ Cohesion: 0.12
 Nodes (13): Binarization, code:bash (fairseq=/path/to/fairseq), code:bash (fairseq=/path/to/fairseq), code:bash (fairseq-preprocess \), code:bash (fairseq-generate \), Download model, sentencepiece vocab, Encode using our SentencePiece Model, Example Generation code (+5 more)
 
 ### Community 320 - "Community 320"
-Cohesion: 0.14
-Nodes (7): Calculate the elapsed time., Write timers to a tensorboard writer, Log a group of timers., Timer, Timers, DistributedDataParallel, Module
+Cohesion: 0.2
+Nodes (5): Calculate the elapsed time., Write timers to a tensorboard writer, Log a group of timers., Timer, Timers
 
 ### Community 322 - "Community 322"
-Cohesion: 0.33
-Nodes (4): ModelParallelMultiheadAttention, Input shape: Time x Batch x Channel          Args:             key_padding_ma, Model parallel Multi-headed attention.     This performs the Multi-headed atten, Reorder buffered internal state (for incremental generation).
+Cohesion: 0.16
+Nodes (7): _FP16OptimizerMixin, Multiplies grads by a constant ``c``., Clips gradient norm and updates dynamic loss scaler., Performs a single optimization step., Clears the gradients of all optimized parameters., Load an optimizer state dict.          In general we should prefer the configu, Load an optimizer state dict.          In general we should prefer the configu
 
 ### Community 323 - "Community 323"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (7): FairseqIncrementalDecoder, Sets the beam size in the decoder and all children., Base class for incremental decoders.      Incremental decoding is a special mo, Args:             prev_output_tokens (LongTensor): shifted output tokens of sha, Returns:             tuple:                 - the decoder's features of shape, Reorder incremental state.          This will be called when the order of the, Main entry point for reordering the incremental state.          Due to limitat
 
 ### Community 324 - "Community 324"
-Cohesion: 0.15
-Nodes (13): ChoiceEnum(), __instancecheck__(), return the Enum class used to enforce list of choices, StrEnum, StrEnumMeta, Enum, EnumMeta, augment_dictionary() (+5 more)
+Cohesion: 0.18
+Nodes (6): ChoiceEnum(), __instancecheck__(), return the Enum class used to enforce list of choices, StrEnum, StrEnumMeta, EnumMeta
 
 ### Community 325 - "Community 325"
 Cohesion: 0.12
@@ -2356,8 +2358,8 @@ Cohesion: 0.3
 Nodes (6): label_smoothed_nll_loss(), LabelSmoothedCrossEntropyCriterion, LabelSmoothedCrossEntropyCriterionConfig, logging_outputs_can_be_summed(), Compute the loss for the given sample.          Returns a tuple with three ele, reduce_metrics()
 
 ### Community 337 - "Community 337"
-Cohesion: 0.36
-Nodes (3): Sparse Multi-Headed Attention.      "Generating Long Sequences with Sparse Tra, SparseMultiheadAttention, MultiheadAttention
+Cohesion: 0.2
+Nodes (5): main(), MUSTC, process_joint(), Create a Dataset for MuST-C. Each item is a tuple of the form:     waveform, sa, main()
 
 ### Community 338 - "Community 338"
 Cohesion: 0.31
@@ -2380,8 +2382,8 @@ Cohesion: 0.25
 Nodes (7): attrsetter(), get_layers(), get_param(), quantize_model_(), Filters out the layers according to a regexp. Note that     we omit biases., Given a quantization configuration, get the right parameter     for the module, Quantize a model in-place by stages. All the targeted     layers are replaced b
 
 ### Community 343 - "Community 343"
-Cohesion: 0.3
-Nodes (8): FairseqNAG, FairseqNAGConfig, NAG, optimizer_config(), Performs a single optimization step.          Args:             closure (call, supports_flat_params(), supports_memory_efficient_fp16(), Optimizer
+Cohesion: 0.27
+Nodes (9): FairseqOptimizer, FairseqNAG, FairseqNAGConfig, NAG, optimizer_config(), Performs a single optimization step.          Args:             closure (call, supports_flat_params(), supports_memory_efficient_fp16() (+1 more)
 
 ### Community 344 - "Community 344"
 Cohesion: 0.15
@@ -2456,8 +2458,8 @@ Cohesion: 0.14
 Nodes (11): 1) Download the CNN and Daily Mail data and preprocess it into data files with non-tokenized cased samples., 2) BPE preprocess:, 3) Binarize dataset:, 4) Fine-tuning on CNN-DM summarization task:, code:bash (wget -N 'https://dl.fbaipublicfiles.com/fairseq/gpt2_bpe/enc), code:bash (fairseq-preprocess \), code:bash (TOTAL_NUM_UPDATES=20000), code:bash (cp data-bin/cnn_dm/dict.source.txt  checkpoints/) (+3 more)
 
 ### Community 364 - "Community 364"
-Cohesion: 0.24
-Nodes (9): add_args(), CommonsenseQATask, load_dictionary(), Task to finetune RoBERTa for Commonsense QA., Load a given dataset split.          Args:             split (str): name of t, setup_task(), source_dictionary(), target_dictionary() (+1 more)
+Cohesion: 0.26
+Nodes (8): add_args(), CommonsenseQATask, load_dictionary(), Task to finetune RoBERTa for Commonsense QA., Load a given dataset split.          Args:             split (str): name of t, setup_task(), source_dictionary(), target_dictionary()
 
 ### Community 365 - "Community 365"
 Cohesion: 0.24
@@ -2472,15 +2474,15 @@ Cohesion: 0.22
 Nodes (3): BucketPadLengthDataset, Bucket and pad item lengths to the nearest bucket size. This can be used to, sizes()
 
 ### Community 368 - "Community 368"
-Cohesion: 0.25
-Nodes (3): Sparse implementation of the TransformerSentenceEncoder     - see SparseMultihe, SparseTransformerSentenceEncoder, TransformerSentenceEncoder
+Cohesion: 0.12
+Nodes (6): Implements a Sprase Transformer Encoder Layer (see SparseMultiheadAttention), SparseTransformerSentenceEncoderLayer, Sparse implementation of the TransformerSentenceEncoder     - see SparseMultihe, SparseTransformerSentenceEncoder, TransformerSentenceEncoder, TransformerSentenceEncoderLayer
 
 ### Community 369 - "Community 369"
-Cohesion: 0.25
-Nodes (3): Implements a Sprase Transformer Encoder Layer (see SparseMultiheadAttention), SparseTransformerSentenceEncoderLayer, TransformerSentenceEncoderLayer
+Cohesion: 0.37
+Nodes (7): add_arguments(), build_sampler(), make_ratio_sampling(), make_temperature_sampling(), SamplingMethod, temperature_sampling(), uniform()
 
 ### Community 370 - "Community 370"
-Cohesion: 0.24
+Cohesion: 0.18
 Nodes (7): fsdp_enable_wrap(), fsdp_wrap(), FullyShardedDataParallel, Helper to wrap layers/modules in FSDP. This falls back to a no-op if     fairsc, A small wrapper around fairscale's FullyShardedDataParallel (FSDP) with some, unwrapped_module(), FSDP
 
 ### Community 371 - "Community 371"
@@ -2492,12 +2494,12 @@ Cohesion: 0.27
 Nodes (7): add_args(), MaskedLMTask, Load a given dataset split.          Args:             split (str): name of t, Task for training masked language models (e.g., BERT, RoBERTa)., setup_task(), source_dictionary(), target_dictionary()
 
 ### Community 373 - "Community 373"
-Cohesion: 0.26
-Nodes (9): Adagrad, AdagradWithGradClip, add_args(), _clip_grad(), FairseqAdagradWithGradClip, optimizer_config(), Adagrad algorithm with custom gradient clipping, supports_flat_params() (+1 more)
+Cohesion: 0.29
+Nodes (8): Adagrad, AdagradWithGradClip, add_args(), _clip_grad(), FairseqAdagradWithGradClip, optimizer_config(), Adagrad algorithm with custom gradient clipping, supports_flat_params()
 
 ### Community 374 - "Community 374"
-Cohesion: 0.62
-Nodes (3): from_pretrained(), GottbertModel, hub_models()
+Cohesion: 0.37
+Nodes (8): CPUAdam, FairseqCPUAdam, FairseqCPUAdamConfig, _get_cpu_adam(), optimizer_config(), Adam optimizer for fairseq, optimized for CPU tensors.      Important note: th, step(), supports_flat_params()
 
 ### Community 375 - "Community 375"
 Cohesion: 0.15
@@ -2529,7 +2531,7 @@ Nodes (5): FixedLRSchedule, FixedLRScheduleConfig, Decay the LR on a fixed sched
 
 ### Community 383 - "Community 383"
 Cohesion: 0.14
-Nodes (8): BaseWrapperDataset, AppendTokenDataset, sizes(), apply_mask(), can_reuse_epoch_itr_across_epochs(), __getitem_cached__(), MaskTokensDataset, A wrapper Dataset for masked language modeling.      Input items are masked ac
+Nodes (8): BaseWrapperDataset, apply_mask(), can_reuse_epoch_itr_across_epochs(), __getitem_cached__(), MaskTokensDataset, A wrapper Dataset for masked language modeling.      Input items are masked ac, Replaces tokens found in the dataset by a specified replacement token      Arg, ReplaceDataset
 
 ### Community 384 - "Community 384"
 Cohesion: 0.18
@@ -2569,7 +2571,7 @@ Nodes (5): InverseSquareRootLRScheduleConfig, InverseSquareRootSchedule, Decay t
 
 ### Community 393 - "Community 393"
 Cohesion: 0.12
-Nodes (6): # TODO: Can we add deteminism without this constraint?, supports_prefetch(), BertDictionary, Dictionary for BERT task. This extends MaskedLMDictionary by adding support, Helper to get index of cls symbol, Helper to get index of sep symbol
+Nodes (5): supports_prefetch(), BertDictionary, Dictionary for BERT task. This extends MaskedLMDictionary by adding support, Helper to get index of cls symbol, Helper to get index of sep symbol
 
 ### Community 394 - "Community 394"
 Cohesion: 0.24
@@ -2584,8 +2586,8 @@ Cohesion: 0.47
 Nodes (8): add_args(), base_enc_dec_architecture(), build_model(), from_roberta(), # TODO: hide setting "encoder_attn" layers behind a flag., # TODO: this would become easier if encoder/decoder where using a similar, read_args_from_roberta(), RobertaEncDecModel
 
 ### Community 397 - "Community 397"
-Cohesion: 0.25
-Nodes (4): FairseqEncoderModel, Get normalized probabilities (or log probs) from a net's output., Register a classification head., RobertaModel
+Cohesion: 0.29
+Nodes (3): Get normalized probabilities (or log probs) from a net's output., Register a classification head., RobertaModel
 
 ### Community 398 - "Community 398"
 Cohesion: 0.35
@@ -2624,8 +2626,8 @@ Cohesion: 0.27
 Nodes (6): # FIXME: revert when gather based xla reduction is implemented, Whether the logging outputs returned by `forward` can be summed         across, Compute the loss for the given sample.          Returns a tuple with three ele, reduce_metrics(), Wav2vecCriterion, Wav2VecCriterionConfig
 
 ### Community 407 - "Community 407"
-Cohesion: 0.14
-Nodes (5): make_data_loader(), make_dataset(), A simple dataset builder, A simple dataloder builder, AudioPrecomputeDataset
+Cohesion: 0.2
+Nodes (4): Translation (Sequence Generation) task for Levenshtein Transformer     See `"Le, Load a given dataset split.          Args:             split (str): name of t, TranslationLevenshteinConfig, TranslationLevenshteinTask
 
 ### Community 408 - "Community 408"
 Cohesion: 0.35
@@ -2656,8 +2658,8 @@ Cohesion: 0.19
 Nodes (6): FairseqLRScheduler, CosineLRSchedule, CosineLRScheduleConfig, Update the learning rate at the end of the given epoch., Update the learning rate after each update., Assign LR based on a cyclical schedule that follows the cosine function.
 
 ### Community 415 - "Community 415"
-Cohesion: 0.27
-Nodes (6): A batch collator that does nothing, A batch collator that does nothing, Reset random seed for each worker, Reset random seed for each worker, trivial_batch_collator(), worker_init_reset_seed()
+Cohesion: 0.16
+Nodes (5): _MemoryEfficientFP16OptimizerMixin, Multiplies grads by a constant *c*., Clips gradient norm and updates dynamic loss scaler., Performs a single optimization step., Clears the gradients of all optimized parameters.
 
 ### Community 418 - "Community 418"
 Cohesion: 0.47
@@ -2672,8 +2674,8 @@ Cohesion: 0.2
 Nodes (5): ModuleProxyWrapper, Wrap a DistributedDataParallel module and forward requests for missing     attr, Forward missing attributes to twice-wrapped module., Forward to the twice-wrapped module., Forward to the twice-wrapped module.
 
 ### Community 421 - "Community 421"
-Cohesion: 0.13
-Nodes (21): add_args(), build_model(), build_shared_embeddings(), check_type(), decoder(), encoder(), FairseqEncoderDecoderModel, FairseqEncoderModel (+13 more)
+Cohesion: 0.08
+Nodes (30): add_args(), BaseFairseqModel, build_model(), build_shared_embeddings(), check_type(), decoder(), encoder(), FairseqEncoderDecoderModel (+22 more)
 
 ### Community 422 - "Community 422"
 Cohesion: 0.17
@@ -2696,8 +2698,8 @@ Cohesion: 0.48
 Nodes (7): add_args(), build_model(), gumbel_noise(), inat_base_architecture(), iter_nat_wmt_en_de(), IterNATransformerModel, _sequential_poisoning()
 
 ### Community 427 - "Community 427"
-Cohesion: 0.27
-Nodes (5): Adadelta, add_args(), optimizer_config(), supports_flat_params(), build_optimizer()
+Cohesion: 0.47
+Nodes (4): Adadelta, add_args(), optimizer_config(), supports_flat_params()
 
 ### Community 428 - "Community 428"
 Cohesion: 0.6
@@ -2752,8 +2754,8 @@ Cohesion: 0.47
 Nodes (4): Adagrad, add_args(), optimizer_config(), supports_flat_params()
 
 ### Community 443 - "Community 443"
-Cohesion: 0.47
-Nodes (4): add_args(), optimizer_config(), SGD, supports_flat_params()
+Cohesion: 0.27
+Nodes (5): build_optimizer(), add_args(), optimizer_config(), SGD, supports_flat_params()
 
 ### Community 444 - "Community 444"
 Cohesion: 0.29
@@ -2772,8 +2774,8 @@ Cohesion: 0.29
 Nodes (5): add_args(), LabelSmoothedCrossEntropyR3FCriterion, logging_outputs_can_be_summed(), Compute the loss for the given sample.          Returns a tuple with three ele, reduce_metrics()
 
 ### Community 448 - "Community 448"
-Cohesion: 0.09
-Nodes (18): add_args(), NoisyChannelTranslation, Rescore the top k candidates from each beam using noisy channel modeling, get_task(), import_tasks(), New tasks can be added to fairseq with the     :func:`~fairseq.tasks.register_t, register_task(), setup_task() (+10 more)
+Cohesion: 0.25
+Nodes (9): get_task(), import_tasks(), New tasks can be added to fairseq with the     :func:`~fairseq.tasks.register_t, register_task(), setup_task(), load_dictionary(), Same as TranslationTask except use the MaskedLMDictionary class so that     we, TranslationFromPretrainedXLMConfig (+1 more)
 
 ### Community 449 - "Community 449"
 Cohesion: 0.27
@@ -2792,8 +2794,8 @@ Cohesion: 0.47
 Nodes (9): convert_sentence_to_json(), extended_noun_chunks(), filter_noun_chunks(), find_span(), find_token(), get_detokenizer(), get_spacy_nlp(), jsonl_iterator() (+1 more)
 
 ### Community 453 - "Community 453"
-Cohesion: 0.4
-Nodes (4): SpeechToTextTask, check_import(), SimulSpeechToTextTask, SimulTextToTextTask
+Cohesion: 0.35
+Nodes (5): SpeechToTextTask, check_import(), SimulSpeechToTextTask, SimulTextToTextTask, TranslationTask
 
 ### Community 454 - "Community 454"
 Cohesion: 0.18
@@ -2816,7 +2818,7 @@ Cohesion: 0.44
 Nodes (8): compute_starting_silence(), extract_features(), load_audio(), load_model(), load_transforms(), main(), process_av1m(), process_fakeavceleb()
 
 ### Community 461 - "Community 461"
-Cohesion: 0.18
+Cohesion: 0.16
 Nodes (4): LegacyDistributedDataParallel, no_sync(), Implements distributed data parallelism at the module level.      A simplified, This function must be called explicitly after backward to reduce         gradie
 
 ### Community 462 - "Community 462"
@@ -2875,6 +2877,18 @@ Nodes (5): BertConfig, Configuration class to store the configuration of a `Bert
 Cohesion: 0.31
 Nodes (4): Residual_block, SincConv, to_hz(), to_mel()
 
+### Community 477 - "Community 477"
+Cohesion: 0.29
+Nodes (5): CoVoST, main(), process(), Load the n-th sample from the dataset.          Args:             n (int): Th, Create a Dataset for CoVoST (https://github.com/facebookresearch/covost).
+
+### Community 479 - "Community 479"
+Cohesion: 0.53
+Nodes (7): Enum, augment_dictionary(), EncoderLangtok, get_lang_tok(), LangTokSpec, LangTokStyle, Prepend to the beginning of source sentence either the     source or target lan
+
+### Community 480 - "Community 480"
+Cohesion: 0.42
+Nodes (5): build_encoder(), gru_transformer_base_architecture(), gru_transformer_big(), GRUTransformerEncoder, GRUTransformerModel
+
 ### Community 481 - "Community 481"
 Cohesion: 0.36
 Nodes (5): get_iterator(), get_parser(), main(), Load an audio file and return PCM along with the sample rate, Wav2VecFeatureReader
@@ -2884,8 +2898,8 @@ Cohesion: 0.43
 Nodes (3): Transformer decoder consisting of *args.decoder_layers* layers. Each layer, Args:             prev_output_tokens (LongTensor): previous decoder outputs of, TransformerDecoder
 
 ### Community 483 - "Community 483"
-Cohesion: 0.26
-Nodes (4): # HACK: this logic is already present in fairseq/tasks/masked_lm.py, SentencepieceBPE, SentencepieceConfig, FairseqDataclass
+Cohesion: 0.14
+Nodes (6): MosesTokenizer, MosesTokenizerConfig, # HACK: this logic is already present in fairseq/tasks/masked_lm.py, SentencepieceBPE, SentencepieceConfig, FairseqDataclass
 
 ### Community 484 - "Community 484"
 Cohesion: 0.29
@@ -3092,8 +3106,8 @@ Cohesion: 0.29
 Nodes (7): __pyx_memview_get_nn___pyx_t_7fairseq_4data_22token_block_utils_fast_DTYPE_t(), __Pyx_PyLong_From_int(), __Pyx_PyLong_From_int64_t(), __Pyx_PyLong_From_long(), __Pyx_VectorcallBuilder_AddArg(), __Pyx_VectorcallBuilder_AddArg_Check(), __Pyx_VectorcallBuilder_AddArgStr()
 
 ### Community 552 - "Community 552"
-Cohesion: 0.47
-Nodes (4): add_args(), FairseqLAMB, optimizer_config(), supports_flat_params()
+Cohesion: 0.4
+Nodes (5): LegacyFairseqOptimizer, add_args(), FairseqLAMB, optimizer_config(), supports_flat_params()
 
 ### Community 553 - "Community 553"
 Cohesion: 0.48
@@ -3124,8 +3138,8 @@ Cohesion: 0.47
 Nodes (5): backward(), forward(), Adds a vector of scalars, used in self-attention mechanism to allow     the mod, scalar_bias(), ScalarBias
 
 ### Community 561 - "Community 561"
-Cohesion: 0.14
-Nodes (6): BertForPreTraining, BertLMPredictionHead, BertOnlyMLMHead, BertPredictionHeadTransform, BertPreTrainingHeads, BERT model with pre-training heads.     This module comprises the BERT model fo
+Cohesion: 0.2
+Nodes (4): BertForMaskedLM, BertLMPredictionHead, BertOnlyMLMHead, BERT model with the masked language modeling head.     This module comprises th
 
 ### Community 562 - "Community 562"
 Cohesion: 0.29
@@ -3169,7 +3183,7 @@ Nodes (3): dump_feature(), get_path_iterator(), MfccFeatureReader
 
 ### Community 572 - "Community 572"
 Cohesion: 0.16
-Nodes (10): build_encoder(), gru_transformer_base_architecture(), gru_transformer_big(), GRUTransformerEncoder, GRUTransformerModel, Transformer encoder consisting of *args.encoder_layers* layers. Each layer, Args:             src_tokens (LongTensor): tokens in the source language of sha, Args:             src_tokens (LongTensor): tokens in the source language of sha (+2 more)
+Nodes (7): Upgrade a (possibly old) state dict for new versions of fairseq., Transformer encoder consisting of *args.encoder_layers* layers. Each layer, Args:             src_tokens (LongTensor): tokens in the source language of sha, Args:             src_tokens (LongTensor): tokens in the source language of sha, Maximum input length supported by the encoder., Upgrade a (possibly old) state dict for new versions of fairseq., TransformerEncoder
 
 ### Community 573 - "Community 573"
 Cohesion: 0.39
@@ -3235,6 +3249,10 @@ Nodes (4): Multiply the output regression range by a learnable constant value, i
 Cohesion: 0.14
 Nodes (16): batch_size_in_state(), batch_state(), emformer_encoder(), Fp32LayerNorm, init_state(), NoSegAugmentedMemoryTransformer, PositionwiseFF, # TODO: make it configurable from the args (+8 more)
 
+### Community 596 - "Community 596"
+Cohesion: 0.67
+Nodes (4): check_diff(), diff_list(), get_directions(), main()
+
 ### Community 597 - "Community 597"
 Cohesion: 0.25
 Nodes (5): code:bash (checkpoint=<path-to-checkpoint>), code:bash (python $FAIRSEQ_ROOT/examples/speech_recognition/new/infer.p), code:bash (python $FAIRSEQ_ROOT/examples/speech_recognition/new/infer.p), Flashlight Decoder, Usage
@@ -3282,6 +3300,10 @@ Nodes (3): convert_yaml_to_tuple(), parse_config_yaml(), Converts a yaml diction
 ### Community 611 - "Community 611"
 Cohesion: 0.67
 Nodes (4): buffered_read(), cli_main(), main(), make_batches()
+
+### Community 612 - "Community 612"
+Cohesion: 0.38
+Nodes (3): add_args(), NoisyChannelTranslation, Rescore the top k candidates from each beam using noisy channel modeling
 
 ### Community 613 - "Community 613"
 Cohesion: 0.71
@@ -3371,17 +3393,33 @@ Nodes (3): compute_accuracy(), compute_dist(), load_embeddings()
 Cohesion: 0.33
 Nodes (3): code:block1 (tgt_lang=...), Installation, M2M-100 Tokenization
 
+### Community 704 - "Community 704"
+Cohesion: 0.62
+Nodes (3): from_pretrained(), hub_models(), XLMRModel
+
+### Community 1221 - "Community 1221"
+Cohesion: 0.29
+Nodes (3): BertForPreTraining, BertPreTrainingHeads, BERT model with pre-training heads.     This module comprises the BERT model fo
+
+### Community 1222 - "Community 1222"
+Cohesion: 0.29
+Nodes (3): BertLayerNorm, BertPredictionHeadTransform, Construct a layernorm module in the TF style (epsilon inside the square root).
+
+### Community 1223 - "Community 1223"
+Cohesion: 0.33
+Nodes (3): Get normalized probabilities (or log probs) from a net's output., Get normalized probabilities (or log probs) from a net's output., Scriptable helper function for get_normalized_probs in ~BaseFairseqModel
+
 ## Knowledge Gaps
 - **2482 isolated node(s):** `Source: https://stackoverflow.com/a/54128391`, `Add optimizer-specific arguments to the parser.`, `Return a kwarg dictionary that will be used to override optimizer         args`, `Adagrad algorithm with custom gradient clipping`, `Soft masking function for adaptive size.     It masks out the last K values of` (+2477 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **399 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **402 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Dictionary` connect `Community 28` to `Community 256`, `Community 2`, `Community 355`, `Community 41`, `Community 202`, `Community 92`, `Community 339`, `Community 85`, `Community 21`, `Community 380`, `Community 185`, `Community 156`?**
-  _High betweenness centrality (0.081) - this node is a cross-community bridge._
-- **Why does `MultiheadAttention` connect `Community 192` to `Community 337`, `Community 498`, `Community 20`, `Community 127`?**
+  _High betweenness centrality (0.080) - this node is a cross-community bridge._
+- **Why does `MultiheadAttention` connect `Community 20` to `Community 253`, `Community 127`?**
   _High betweenness centrality (0.046) - this node is a cross-community bridge._
 - **Why does `PathManager` connect `Community 185` to `Community 64`, `Community 68`, `Community 107`, `Community 492`, `Community 491`, `Community 50`, `Community 467`, `Community 20`, `Community 22`, `Community 535`, `Community 28`?**
   _High betweenness centrality (0.042) - this node is a cross-community bridge._

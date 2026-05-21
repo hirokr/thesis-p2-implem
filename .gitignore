@@ -9,6 +9,8 @@ detectors/AVH-Align/fakeav_eval_test\*
 detectors/AVH-Align/fakeav_full_eval\*
 .detectors/AVH-Align/fakeav_eval_test/*
 .detectors/AVH-Align/fakeav_full_eval/*
+./graphify-out
+graphify-out
 
 # ============================================================
 # Python
@@ -135,3 +137,5 @@ Thumbs.db
 .spyproject
 
 detectors/AVH-Align/av_hubert
+
+graphify-out/manifest.json

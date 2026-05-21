@@ -5,14 +5,16 @@ from pathlib import Path
 
 BASE_DIR = Path(r"C:\t309\dataSubset")
 FILES = ["av1.metadata.json", "dfdc.metadata.json", "faceavceleb.metadata.json"]
-LIMIT = 10000
+LIMIT = 5000
 
 
 def trim_data(data: object) -> object:
     if isinstance(data, list):
+        print(len(data))
         return data[:LIMIT]
     if isinstance(data, dict):
         items = list(data.items())
+        print(len(data))
         return dict(items[:LIMIT])
     raise TypeError(f"Unsupported JSON root type: {type(data).__name__}")
 
