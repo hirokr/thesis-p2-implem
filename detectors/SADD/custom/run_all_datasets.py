@@ -355,10 +355,26 @@ def preprocess_item(item: MetadataItem, dataset_cache_root: Path, crop_face: boo
         raise RuntimeError(f"Cropping did not produce output: {crop_dir}")
 
     cropped_videos = sorted(
-        path for path in crop_dir.iterdir() if path.is_file() and path.suffix.lower() in {".avi", ".mp4", ".mov", ".mkv"}
+        path
+        for path in crop_dir.iterdir()
+        if path.is_file() and path.suffix.lower() in {".avi", ".mp4", ".mov", ".mkv"}
     )
     if not cropped_videos:
-        raise RuntimeError(f"No cropped clips found in {crop_dir}")
+        log_skip(item, f"no cropped clips found in {crop_dir}")
+        done_marker.parent.mkdir(parents=True, exist_ok=True)
+        done_marker.write_text(
+            json.dumps(
+                {
+                    "video_path": str(item.video_path),
+                    "crop_face": crop_face,
+                    "chunks": 0,
+                    "skipped": "no cropped clips",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return
 
     chunk_root = dataset_cache_root / "pytmp" / label_name / item.video_id
     chunk_root.mkdir(parents=True, exist_ok=True)
