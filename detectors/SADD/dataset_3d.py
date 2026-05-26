@@ -138,6 +138,8 @@ class deepfake_3d_rawaudio(deepfake_3d):
                        sorted(os.listdir(vpath))]
 
                 sample_rate, audio = wavfile.read(audiopath)
+                if audio.size == 0:
+                    audio = np.zeros(48000, dtype=np.float32)
 
                 t_seq = self.transform(seq)  # apply same transform
 

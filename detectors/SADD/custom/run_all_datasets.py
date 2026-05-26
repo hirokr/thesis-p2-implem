@@ -611,7 +611,10 @@ class ChunkDataset(torch.utils.data.Dataset):
 
         sample_rate, audio = wavfile.read(item.audio_path)
         if self.audio_format == "waveform":
-            normalized_audio = min_max_normalize(audio, int(audio.min()), int(audio.max()))
+            if audio.size == 0:
+                normalized_audio = np.zeros(AUDIO_WAVEFORM_SAMPLES, dtype=np.float32)
+            else:
+                normalized_audio = min_max_normalize(audio, int(audio.min()), int(audio.max()))
             if normalized_audio.shape[0] < AUDIO_WAVEFORM_SAMPLES:
                 padded_audio = np.zeros(AUDIO_WAVEFORM_SAMPLES, dtype=normalized_audio.dtype)
                 padded_audio[: normalized_audio.shape[0]] = normalized_audio

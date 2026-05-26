@@ -16,4 +16,4 @@ python detectors/SADD/custom/run_all_datasets.py --dataset all --dry_run
 python detectors/SADD/custom/run_all_datasets.py --dataset av1 --device gpu --checkpoint C:\t309\detectors\SADD\.weights\model_best_epoch50.pth.tar
 
 
-python detectors/SADD/custom/run_all_datasets.py --dataset all --device gpu --checkpoint C:\t309\detectors\SADD\.weights\model_best_epoch50.pth.tar
+python detectors/SADD/custom/run_all_datasets.py --dataset dfdc --device gpu --checkpoint C:\t309\detectors\SADD\.weights\model_best_epoch50.pth.tar
