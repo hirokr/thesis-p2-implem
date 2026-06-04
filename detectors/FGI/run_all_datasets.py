@@ -167,28 +167,45 @@ from model import My_Network
 def compute_eer(y_true, y_score):
     fpr, tpr, thresholds = roc_curve(y_true, y_score)
     fnr = 1 - tpr
-    # EER where FPR ~= FNR
-    abs_diffs = np.abs(fpr - fnr)
-    idx = np.nanargmin(abs_diffs)
+    diff = fpr - fnr
+
+    exact = np.where(diff == 0)[0]
+    if len(exact) > 0:
+        idx = exact[0]
+        return float(fpr[idx]), float(thresholds[idx])
+
+    crossing = np.where(diff[:-1] * diff[1:] < 0)[0]
+    if len(crossing) > 0:
+        idx = crossing[0]
+        x0, x1 = diff[idx], diff[idx + 1]
+        weight = -x0 / (x1 - x0)
+        eer = fpr[idx] + weight * (fpr[idx + 1] - fpr[idx])
+        thr = thresholds[idx] + weight * (thresholds[idx + 1] - thresholds[idx])
+        return float(eer), float(thr)
+
+    idx = np.nanargmin(np.abs(diff))
     eer = (fpr[idx] + fnr[idx]) / 2.0
-    thr = thresholds[idx]
-    return eer, thr
+    return float(eer), float(thresholds[idx])
 
 
-def best_threshold_by_f1(y_true, y_score):
-    thresholds = np.linspace(0.0, 1.0, 1001)
-    best_f1 = -1
-    best_thr = 0.5
-    for thr in thresholds:
-        y_pred = (y_score >= thr).astype(int)
-        f1 = f1_score(y_true, y_pred, zero_division=0)
-        if f1 > best_f1:
-            best_f1 = f1
-            best_thr = thr
-    return best_thr, best_f1
+def resolve_threshold(y_true, y_score, strategy='fixed', fixed_threshold=0.5):
+    if strategy == 'fixed':
+        return float(fixed_threshold)
+    if strategy == 'f1':
+        raise ValueError(
+            'threshold_strategy=f1 tunes on the evaluation labels and produces biased metrics. '
+            'Use --threshold_strategy fixed with a threshold chosen before evaluation.'
+        )
+    raise ValueError(f'Unknown threshold strategy: {strategy}')
 
 
-def evaluate_from_pickles(pred_dict, target_dict, num_chunks_dict):
+def evaluate_from_pickles(
+    pred_dict,
+    target_dict,
+    num_chunks_dict,
+    threshold_strategy='fixed',
+    threshold=0.5,
+):
     vids = list(pred_dict.keys())
     scores = []
     targets = []
@@ -203,12 +220,14 @@ def evaluate_from_pickles(pred_dict, target_dict, num_chunks_dict):
 
     y_score = np.array(scores)
     y_true = np.array(targets)
+    if len(y_true) == 0:
+        raise ValueError('No valid predictions were collected; cannot compute evaluation metrics.')
 
     has_both_classes = len(np.unique(y_true)) > 1
     roc_auc = roc_auc_score(y_true, y_score) if has_both_classes else float('nan')
     pr_auc = average_precision_score(y_true, y_score) if has_both_classes else float('nan')
 
-    thr, _ = best_threshold_by_f1(y_true, y_score)
+    thr = resolve_threshold(y_true, y_score, strategy=threshold_strategy, fixed_threshold=threshold)
     y_pred = (y_score >= thr).astype(int)
     acc = accuracy_score(y_true, y_pred)
     prec = precision_score(y_true, y_pred, zero_division=0)
@@ -227,8 +246,10 @@ def evaluate_from_pickles(pred_dict, target_dict, num_chunks_dict):
 
     return {
         'Samples': len(y_true),
+        'Videos': len(y_true),
+        'Chunks': int(sum(num_chunks_dict.get(v, 1) for v in vids)),
         'Threshold': float(thr),
-        'ThresholdStrategy': 'f1',
+        'ThresholdStrategy': threshold_strategy,
         'Accuracy': float(acc),
         'Precision': float(prec),
         'Recall': float(rec),
@@ -471,19 +492,19 @@ def run_inference_and_collect(out_dir, dataset_name, checkpoint, device='cuda'):
 
 
 def append_results_markdown(md_path, row):
-    header = '| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n'
-    sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|\n'
+    header = '| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n'
+    sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n'
     exists = os.path.exists(md_path)
     needs_header = True
     if exists and os.path.getsize(md_path) > 0:
         with open(md_path, 'r') as f:
             first_line = f.readline().strip()
-        needs_header = not first_line.startswith('| Timestamp |')
+        needs_header = first_line != header.strip()
     with open(md_path, 'a') as f:
         if needs_header:
             f.write(header)
             f.write(sep)
-        f.write(f"| {row['Timestamp']} | {row['Dataset']} | {row['Samples']} | {row['Threshold']:.4f} | {row['ThresholdStrategy']} | {row['Accuracy']:.4f} | {row['Precision']:.4f} | {row['Recall']:.4f} | {row['F1']:.4f} | {row['ROC_AUC']:.4f} | {row['PR_AUC']:.4f} | {row['EER']:.4f} | {row['FPR']:.4f} |\n")
+        f.write(f"| {row['Timestamp']} | {row['Dataset']} | {row['Videos']} | {row['Chunks']} | {row['Threshold']:.4f} | {row['ThresholdStrategy']} | {row['Accuracy']:.4f} | {row['Precision']:.4f} | {row['Recall']:.4f} | {row['F1']:.4f} | {row['ROC_AUC']:.4f} | {row['PR_AUC']:.4f} | {row['EER']:.4f} | {row['FPR']:.4f} |\n")
 
 
 def main():
@@ -497,8 +518,26 @@ def main():
     parser.add_argument('--out_md', type=str, default=r'C:\t309\results\fgi\fgi.md')
     parser.add_argument('--stage_root', type=str, default=r'C:\t309\results\fgi\staging')
     parser.add_argument('--preprocess', type=str, default='simple', choices=['simple', 'full'])
+    parser.add_argument(
+        '--threshold_strategy',
+        type=str,
+        default='fixed',
+        choices=['fixed', 'f1'],
+        help='Use fixed threshold for unbiased test metrics. f1 is rejected because it tunes on the evaluated set.',
+    )
+    parser.add_argument(
+        '--threshold',
+        type=float,
+        default=0.5,
+        help='Decision threshold used when --threshold_strategy fixed.',
+    )
     parser.add_argument('--dry_run', action='store_true')
     args = parser.parse_args()
+    if args.threshold_strategy == 'f1':
+        parser.error(
+            '--threshold_strategy f1 tunes on evaluation labels and produces biased metrics; '
+            'use --threshold_strategy fixed with a preselected --threshold.'
+        )
 
     metadata_root = args.metadata_root if args.metadata_root else args.base_data_root
 
@@ -559,7 +598,17 @@ def main():
         print('Running inference for', ds)
         pred, targ, numc = run_inference_and_collect(run_preprocess_dir, model_dataset, args.checkpoint, device=args.device)
 
-        metrics = evaluate_from_pickles(pred, targ, numc)
+        try:
+            metrics = evaluate_from_pickles(
+                pred,
+                targ,
+                numc,
+                threshold_strategy=args.threshold_strategy,
+                threshold=args.threshold,
+            )
+        except ValueError as exc:
+            print(f'Could not compute metrics for dataset {ds}: {exc}')
+            continue
         row = {
             'Timestamp': datetime.now().isoformat(),
             'Dataset': ds,
