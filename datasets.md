@@ -24,3 +24,23 @@ Checked the three metadata files.
     - `FakeVideo-FakeAudio`: `500`
 
 So: **DFDC is balanced for binary real/fake classification. AV1 and FakeAVCeleb are balanced by their 4-class audio/video manipulation categories, but not balanced if collapsed into real vs fake.**
+
+
+
+---
+av1.metadata.json
+  total: 1000
+  real: 500
+  fake: 500
+  fake classes: visual_modified=167, audio_modified=167, both_modified=166
+
+dfdc.metadata.json
+  total: 1000
+  REAL: 500
+  FAKE: 500
+
+faceavceleb.metadata.json
+  total: 1000
+  real: 500
+  fake: 500
+  fake classes: FakeVideo-RealAudio=167, FakeVideo-FakeAudio=167, RealVideo-FakeAudio=166
