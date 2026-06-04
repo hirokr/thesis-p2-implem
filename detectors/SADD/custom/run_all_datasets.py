@@ -7,6 +7,13 @@ This runner:
 - supports --dataset for a single dataset or all datasets sequentially
 - supports --dry_run to limit each dataset to 10 videos
 - writes one markdown row per dataset to C:\t309\results\sadd\sadd.md
+
+FIXES APPLIED:
+  1. Score polarity: SADD distance is HIGH for fake, LOW for real.
+     y_score is now negated before thresholding so high score = real (pos_label=1).
+  2. Positive class: fake (label=0) is now the positive class for all
+     precision / recall / F1 / PR_AUC / FPR metrics, matching deepfake
+     detection convention.
 """
 
 from __future__ import annotations
@@ -386,7 +393,6 @@ def preprocess_item(item: MetadataItem, dataset_cache_root: Path, crop_face: boo
 
     audio_path = crop_dir / "audio.wav"
 
-    # Use the first cropped clip, matching the original pre-process script.
     crop_video_path = cropped_videos[0]
     run_ffmpeg([
         "-y",
@@ -771,7 +777,12 @@ def evaluate_dataset(
 
     ordered_video_ids = sorted(video_scores)
     y_true = np.array([video_target[video_id] for video_id in ordered_video_ids], dtype=int)
-    y_score = np.array([video_scores[video_id] for video_id in ordered_video_ids], dtype=float)
+
+    # --- FIX 1: Score polarity ---
+    # PairwiseDistance is HIGH for fake (audio-visual mismatch) and LOW for real
+    # (audio-visual match). Negate so that a HIGH score means real (pos_label=1),
+    # which is what the threshold logic and ROC functions expect.
+    y_score = -np.array([video_scores[video_id] for video_id in ordered_video_ids], dtype=float)
 
     threshold = choose_threshold(y_true, y_score, strategy=args.threshold_strategy)
     y_pred = (y_score >= threshold).astype(int)
@@ -802,7 +813,8 @@ def choose_threshold(y_true: np.ndarray, y_score: np.ndarray, strategy: str) -> 
     best_f1 = -1.0
     for threshold in thresholds:
         predictions = (y_score >= threshold).astype(int)
-        score = f1_score(y_true, predictions, zero_division=0)
+        # --- FIX 2: fake (label=0) is the positive class for deepfake detection ---
+        score = f1_score(y_true, predictions, zero_division=0, pos_label=0)
         if score > best_f1:
             best_f1 = float(score)
             best_threshold = float(threshold)
@@ -811,23 +823,38 @@ def choose_threshold(y_true: np.ndarray, y_score: np.ndarray, strategy: str) -> 
 
 
 def compute_metrics(y_true: np.ndarray, y_score: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    # ROC_AUC: binary AUC is symmetric between classes, so no pos_label needed here.
+    # After score negation, roc_auc_score correctly reflects discriminative power.
     try:
         roc_auc = float(roc_auc_score(y_true, y_score))
     except ValueError:
         roc_auc = float("nan")
 
+    # --- FIX 2 (continued): PR_AUC for the fake class ---
+    # y_score was negated (high = real). To get PR_AUC for fake detection we pass
+    # -y_score (= original distance, high = fake) with pos_label=0.
     try:
-        pr_auc = float(average_precision_score(y_true, y_score))
+        pr_auc = float(average_precision_score(y_true, -y_score, pos_label=0))
     except ValueError:
         pr_auc = float("nan")
 
     accuracy = float(accuracy_score(y_true, y_pred))
-    precision = float(precision_score(y_true, y_pred, zero_division=0))
-    recall = float(recall_score(y_true, y_pred, zero_division=0))
-    f1 = float(f1_score(y_true, y_pred, zero_division=0))
 
+    # --- FIX 2 (continued): precision / recall / F1 for fake as positive class ---
+    precision = float(precision_score(y_true, y_pred, zero_division=0, pos_label=0))
+    recall    = float(recall_score(y_true, y_pred, zero_division=0, pos_label=0))
+    f1        = float(f1_score(y_true, y_pred, zero_division=0, pos_label=0))
+
+    # confusion_matrix with labels=[0,1] ravel() gives (TN, FP, FN, TP) relative
+    # to pos_label=1 (real).  For fake as positive:
+    #   TP_fake = TN_sklearn  (fake correctly called fake)
+    #   FP_fake = FN_sklearn  (real incorrectly called fake)
+    #   TN_fake = TP_sklearn  (real correctly called real)
+    #   FN_fake = FP_sklearn  (fake incorrectly called real)
+    # FPR = FP_fake / (FP_fake + TN_fake) = reals called fake / total reals
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
-    fpr = float(fp / (fp + tn)) if (fp + tn) else float("nan")
+    # --- FIX 2 (continued): FPR for fake detection ---
+    fpr = float(fn / (fn + tp)) if (fn + tp) else float("nan")
 
     eer = calculate_eer(y_true, y_score)
 
