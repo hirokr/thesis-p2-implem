@@ -1,2 +1,5 @@
-| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Aggregation | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-06-05T22:09:37.435599 | av1 | 1000 | 7503 | 0.5000 | fixed | mean_pre_fps_fix | 0.5320 | 0.5400 | 0.4320 | 0.4800 | 0.5267 | 0.5112 | 0.4680 | 0.3680 |
+| 2026-06-05T22:35:04.421290 | av1 | 1000 | 9103 | 0.5000 | fixed | mean | 0.5290 | 0.5353 | 0.4400 | 0.4830 | 0.5273 | 0.5116 | 0.4660 | 0.3820 |
+| 2026-06-05T22:40:05.749214 | av1 | 1000 | 9103 | 0.5000 | fixed | max | 0.5230 | 0.5146 | 0.8100 | 0.6294 | 0.5294 | 0.5127 | 0.4600 | 0.7640 |

@@ -6,6 +6,7 @@ import subprocess
 import sys
 import shutil
 import tempfile
+import wave
 from datetime import datetime
 import pickle
 import numpy as np
@@ -94,8 +95,6 @@ def select_entries(entries, dry_run=False, max_total=10):
 
 
 def stage_dataset(entries, stage_dir):
-    if os.path.exists(stage_dir):
-        shutil.rmtree(stage_dir)
     os.makedirs(stage_dir, exist_ok=True)
 
     for label in ['real', 'fake']:
@@ -115,6 +114,10 @@ def stage_dataset(entries, stage_dir):
         if not dst_name.lower().endswith(ext.lower()):
             dst_name += ext
         dst = os.path.join(stage_dir, label, dst_name)
+        if os.path.exists(dst):
+            staged += 1
+            staged_by_label[label] += 1
+            continue
         try:
             os.link(src, dst)
         except OSError:
@@ -217,15 +220,24 @@ def evaluate_from_pickles(
     num_chunks_dict,
     threshold_strategy='fixed',
     threshold=0.5,
+    aggregation='mean',
 ):
     vids = list(pred_dict.keys())
     scores = []
     targets = []
     for v in vids:
-        total_score = pred_dict[v]
-        n_chunks = num_chunks_dict.get(v, 1)
-        mean_score = float(total_score) / float(n_chunks)
-        scores.append(mean_score)
+        raw_score = pred_dict[v]
+        if isinstance(raw_score, (list, tuple, np.ndarray)):
+            if aggregation == 'max':
+                score = max(raw_score)
+            elif aggregation == 'mean':
+                score = float(sum(raw_score)) / float(len(raw_score))
+            else:
+                raise ValueError(f'Unknown aggregation: {aggregation}')
+        else:
+            n_chunks = num_chunks_dict.get(v, 1)
+            score = float(raw_score) / float(n_chunks)
+        scores.append(float(score))
         tar = int(target_dict[v])
         # In this codebase test_target: 1 -> fake, 0 -> real
         targets.append(1 if tar == 1 else 0)
@@ -262,6 +274,7 @@ def evaluate_from_pickles(
         'Chunks': int(sum(num_chunks_dict.get(v, 1) for v in vids)),
         'Threshold': float(thr),
         'ThresholdStrategy': threshold_strategy,
+        'Aggregation': aggregation,
         'Accuracy': float(acc),
         'Precision': float(prec),
         'Recall': float(rec),
@@ -278,6 +291,7 @@ def prepare_splits(out_dir, dataset_name, dry_run=False):
     # Build CSV splits directly from the pytmp folder structure that preprocessing created.
     def build_split(root_split_dir):
         rows = []
+        skipped_missing_audio = 0
         for label in ['fake', 'real']:
             split_dir = os.path.join(root_split_dir, label)
             if not os.path.exists(split_dir):
@@ -291,7 +305,12 @@ def prepare_splits(out_dir, dataset_name, dry_run=False):
                     if os.path.isdir(entry_path):
                         # chunk folder
                         audio_path = os.path.join(video_dir, entry + '.wav')
-                        rows.append([entry_path, audio_path, label])
+                        if os.path.exists(audio_path):
+                            rows.append([entry_path, audio_path, label])
+                        else:
+                            skipped_missing_audio += 1
+        if skipped_missing_audio:
+            print(f'Skipped {skipped_missing_audio} chunks with missing audio under {root_split_dir}')
         return rows
 
     # Prefer root pytmp if present (pre-process.py output)
@@ -351,6 +370,57 @@ def simple_preprocess_for_dir(raw_dir):
     """Lightweight preprocessing for dry-run: split videos into 30-frame chunks and audio snippets using ffmpeg.
     Produces structure: <raw_dir>/pytmp/{real,fake}/{video_id}/{chunk_id}/[frames].jpg and <raw_dir>/pytmp/{real,fake}/{video_id}/{chunk_id}.wav
     """
+    def write_silent_wav(path, duration_sec=1.0, sample_rate=48000):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        sample_count = max(1, int(round(duration_sec * sample_rate)))
+        with wave.open(path, 'wb') as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(sample_rate)
+            wav.writeframes(b'\x00\x00' * sample_count)
+
+    def expected_chunk_count(video_path):
+        cmd = [
+            'ffprobe', '-v', 'error',
+            '-select_streams', 'v:0',
+            '-show_entries', 'stream=duration:format=duration',
+            '-of', 'default=noprint_wrappers=1',
+            video_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
+
+        fields = {}
+        for line in result.stdout.splitlines():
+            if '=' in line:
+                key, value = line.split('=', 1)
+                fields[key] = value
+
+        duration = fields.get('duration')
+        try:
+            total_frames = int(float(duration) * 30.0) if duration else None
+        except ValueError:
+            total_frames = None
+
+        if not total_frames:
+            return None
+        return 1 if total_frames < 30 else total_frames // 30
+
+    def valid_preprocessed_chunks(video_out_dir):
+        if not os.path.isdir(video_out_dir):
+            return 0
+        valid = 0
+        for entry in os.listdir(video_out_dir):
+            chunk_dir = os.path.join(video_out_dir, entry)
+            audio_path = os.path.join(video_out_dir, entry + '.wav')
+            if not os.path.isdir(chunk_dir) or not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+                continue
+            frame_count = len([f for f in os.listdir(chunk_dir) if f.lower().endswith('.jpg')])
+            if frame_count >= 30:
+                valid += 1
+        return valid
+
     for split in ['real', 'fake']:
         src_dir = os.path.join(raw_dir, split)
         if not os.path.exists(src_dir):
@@ -363,24 +433,35 @@ def simple_preprocess_for_dir(raw_dir):
                 continue
             video_path = os.path.join(src_dir, video)
             video_id = os.path.basename(video)[:-4]
+            video_out_dir = os.path.join(out_root, video_id)
+            expected_chunks = expected_chunk_count(video_path)
+            if expected_chunks is not None and valid_preprocessed_chunks(video_out_dir) >= expected_chunks:
+                continue
+
             work_frames = os.path.join(raw_dir, 'tmp_frames', video_id)
+            shutil.rmtree(work_frames, ignore_errors=True)
             os.makedirs(work_frames, exist_ok=True)
 
             # extract frames
-            cmd_frames = f"ffmpeg -hide_banner -loglevel error -y -i \"{video_path}\" -qscale:v 2 -threads 1 -f image2 \"{os.path.join(work_frames, '%06d.jpg')}\""
+            cmd_frames = f"ffmpeg -hide_banner -loglevel error -y -i \"{video_path}\" -qscale:v 2 -threads 1 -r 30 -f image2 \"{os.path.join(work_frames, '%06d.jpg')}\""
             subprocess.call(cmd_frames, shell=True)
 
             # extract full audio
             full_audio = os.path.join(work_frames, 'audio.wav')
             cmd_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{video_path}\" -ac 1 -vn -acodec pcm_s16le -ar 48000 \"{full_audio}\""
-            subprocess.call(cmd_audio, shell=True)
+            audio_result = subprocess.run(cmd_audio, shell=True, capture_output=True, text=True)
+            has_audio = audio_result.returncode == 0 and os.path.exists(full_audio) and os.path.getsize(full_audio) > 0
+            if not has_audio:
+                message = (audio_result.stderr or audio_result.stdout or '').strip().splitlines()
+                detail = message[-1] if message else 'no audio stream extracted'
+                print(f'WARNING: using silent audio fallback for {video_path}: {detail}')
 
             frames = sorted([f for f in os.listdir(work_frames) if f.endswith('.jpg')])
             total_frames = len(frames)
             if total_frames == 0:
                 shutil.rmtree(work_frames, ignore_errors=True)
                 continue
-            video_out_dir = os.path.join(out_root, video_id)
+            shutil.rmtree(video_out_dir, ignore_errors=True)
             os.makedirs(video_out_dir, exist_ok=True)
 
             if total_frames < 30:
@@ -394,8 +475,11 @@ def simple_preprocess_for_dir(raw_dir):
                     shutil.copyfile(src, dst)
 
                 audiotmp = os.path.join(video_out_dir, videonum + '.wav')
-                cmd_chunk_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{full_audio}\" -ss 0.000 -to 1.000 \"{audiotmp}\""
-                subprocess.call(cmd_chunk_audio, shell=True)
+                if has_audio:
+                    cmd_chunk_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{full_audio}\" -ss 0.000 -to 1.000 \"{audiotmp}\""
+                    subprocess.call(cmd_chunk_audio, shell=True)
+                if not os.path.exists(audiotmp):
+                    write_silent_wav(audiotmp, duration_sec=1.0)
                 shutil.rmtree(work_frames, ignore_errors=True)
                 continue
 
@@ -416,8 +500,11 @@ def simple_preprocess_for_dir(raw_dir):
                 audiotmp = os.path.join(video_out_dir, videonum + '.wav')
                 audiostart = frameNum / 30.0
                 audioend = (frameNum + 30) / 30.0
-                cmd_chunk_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{full_audio}\" -ss {audiostart:.3f} -to {audioend:.3f} \"{audiotmp}\""
-                subprocess.call(cmd_chunk_audio, shell=True)
+                if has_audio:
+                    cmd_chunk_audio = f"ffmpeg -hide_banner -loglevel error -y -i \"{full_audio}\" -ss {audiostart:.3f} -to {audioend:.3f} \"{audiotmp}\""
+                    subprocess.call(cmd_chunk_audio, shell=True)
+                if not os.path.exists(audiotmp):
+                    write_silent_wav(audiotmp, duration_sec=audioend - audiostart)
 
             shutil.rmtree(work_frames, ignore_errors=True)
 
@@ -493,10 +580,10 @@ def run_inference_and_collect(out_dir, dataset_name, checkpoint, device='cuda'):
             vid_name = os.path.basename(os.path.dirname(audiopath[0]))
 
             if vid_name in test_pred:
-                test_pred[vid_name] += pred_val
+                test_pred[vid_name].append(pred_val)
                 test_num_chunks[vid_name] += 1
             else:
-                test_pred[vid_name] = pred_val
+                test_pred[vid_name] = [pred_val]
                 test_num_chunks[vid_name] = 1
                 test_target[vid_name] = tar
 
@@ -504,8 +591,8 @@ def run_inference_and_collect(out_dir, dataset_name, checkpoint, device='cuda'):
 
 
 def append_results_markdown(md_path, row):
-    header = '| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n'
-    sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n'
+    header = '| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Aggregation | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n'
+    sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n'
     exists = os.path.exists(md_path)
     needs_header = True
     if exists and os.path.getsize(md_path) > 0:
@@ -516,7 +603,7 @@ def append_results_markdown(md_path, row):
         if needs_header:
             f.write(header)
             f.write(sep)
-        f.write(f"| {row['Timestamp']} | {row['Dataset']} | {row['Videos']} | {row['Chunks']} | {row['Threshold']:.4f} | {row['ThresholdStrategy']} | {row['Accuracy']:.4f} | {row['Precision']:.4f} | {row['Recall']:.4f} | {row['F1']:.4f} | {row['ROC_AUC']:.4f} | {row['PR_AUC']:.4f} | {row['EER']:.4f} | {row['FPR']:.4f} |\n")
+        f.write(f"| {row['Timestamp']} | {row['Dataset']} | {row['Videos']} | {row['Chunks']} | {row['Threshold']:.4f} | {row['ThresholdStrategy']} | {row['Aggregation']} | {row['Accuracy']:.4f} | {row['Precision']:.4f} | {row['Recall']:.4f} | {row['F1']:.4f} | {row['ROC_AUC']:.4f} | {row['PR_AUC']:.4f} | {row['EER']:.4f} | {row['FPR']:.4f} |\n")
 
 
 def main():
@@ -542,6 +629,13 @@ def main():
         type=float,
         default=0.5,
         help='Decision threshold used when --threshold_strategy fixed.',
+    )
+    parser.add_argument(
+        '--aggregation',
+        type=str,
+        default='auto',
+        choices=['auto', 'mean', 'max'],
+        help='Aggregate chunk scores into video scores. auto uses max for segmented av1 labels and mean otherwise.',
     )
     parser.add_argument('--dry_run', action='store_true')
     args = parser.parse_args()
@@ -615,12 +709,16 @@ def main():
         pred, targ, numc = run_inference_and_collect(run_preprocess_dir, model_dataset, args.checkpoint, device=args.device)
 
         try:
+            aggregation = args.aggregation
+            if aggregation == 'auto':
+                aggregation = 'max' if ds_lower == 'av1' else 'mean'
             metrics = evaluate_from_pickles(
                 pred,
                 targ,
                 numc,
                 threshold_strategy=args.threshold_strategy,
                 threshold=args.threshold,
+                aggregation=aggregation,
             )
         except ValueError as exc:
             print(f'Could not compute metrics for dataset {ds}: {exc}')
