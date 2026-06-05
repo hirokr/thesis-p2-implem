@@ -22,6 +22,15 @@ def normalize_path(path_str):
     return os.path.normpath(path_str.replace('/', os.sep))
 
 
+def parse_binary_label(raw_label, fake_values, real_values, context):
+    label = str(raw_label or '').strip().lower()
+    if label in fake_values:
+        return 'fake'
+    if label in real_values:
+        return 'real'
+    raise ValueError(f'Unknown label for {context}: {raw_label!r}')
+
+
 def load_metadata_entries(dataset_name, metadata_root, raw_root):
     meta_path = os.path.join(metadata_root, f'{dataset_name}.metadata.json')
     if not os.path.exists(meta_path):
@@ -35,7 +44,7 @@ def load_metadata_entries(dataset_name, metadata_root, raw_root):
     if dataset_name == 'dfdc':
         base = os.path.join(raw_root, 'dfdc')
         for rel, info in data.items():
-            label = 'fake' if info.get('label', '').upper() == 'FAKE' else 'real'
+            label = parse_binary_label(info.get('label'), {'fake'}, {'real'}, rel)
             split = info.get('split')
             full_path = os.path.join(base, normalize_path(rel))
             entries.append({'path': full_path, 'label': label, 'split': split})
@@ -51,8 +60,7 @@ def load_metadata_entries(dataset_name, metadata_root, raw_root):
     elif dataset_name == 'av1':
         for item in data:
             file_path = normalize_path(item.get('file', ''))
-            modify_type = item.get('modify_type', '').lower()
-            label = 'real' if modify_type == 'real' else 'fake'
+            label = parse_binary_label(item.get('modify_type'), {'fake'}, {'real'}, item.get('file', ''))
             split = item.get('split')
             entries.append({'path': file_path, 'label': label, 'split': split})
 
@@ -94,9 +102,12 @@ def stage_dataset(entries, stage_dir):
         os.makedirs(os.path.join(stage_dir, label), exist_ok=True)
 
     staged = 0
+    staged_by_label = {'real': 0, 'fake': 0}
+    missing_by_label = {'real': 0, 'fake': 0}
     for idx, entry in enumerate(entries):
         src = entry['path']
         if not os.path.exists(src):
+            missing_by_label[entry['label']] += 1
             continue
         label = entry['label']
         ext = os.path.splitext(src)[1] or '.mp4'
@@ -109,8 +120,9 @@ def stage_dataset(entries, stage_dir):
         except OSError:
             shutil.copyfile(src, dst)
         staged += 1
+        staged_by_label[label] += 1
 
-    return staged
+    return staged, staged_by_label, missing_by_label
 
 from dataset_3d import deepfake_3d_rawaudio
 
@@ -570,11 +582,15 @@ def main():
         print(f'Selected {len(selected)} items for {ds}')
 
         stage_dir = os.path.join(args.stage_root, ds)
-        staged_count = stage_dataset(selected, stage_dir)
+        staged_count, staged_by_label, missing_by_label = stage_dataset(selected, stage_dir)
         if staged_count == 0:
             print(f'No files staged for {ds}; skipping.')
             continue
-        print(f'Staged {staged_count} files for {ds} at {stage_dir}')
+        print(
+            f'Staged {staged_count} files for {ds} at {stage_dir} '
+            f"(real={staged_by_label['real']}, fake={staged_by_label['fake']}, "
+            f"missing_real={missing_by_label['real']}, missing_fake={missing_by_label['fake']})"
+        )
 
         run_preprocess_dir = stage_dir
 
