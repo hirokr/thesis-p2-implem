@@ -14,8 +14,6 @@ DEFAULT_DATASET_FILES = {
     "av1": "av1.metadata.json",
     "dfdc": "dfdc.metadata.json",
     "faceavceleb": "faceavceleb.metadata.json",
-    "faceforensics": "faceforensics.metadata.json",
-    "lavdf": "lavdf.metadata.json",
 }
 
 
@@ -250,10 +248,6 @@ def main():
             items = _load_dfdc(metadata_path, dataset_root)
         elif name == "faceavceleb":
             items = _load_faceavceleb(metadata_path)
-        elif name == "faceforensics":
-            items = _load_faceforensics(metadata_path)
-        elif name == "lavdf":
-            items = _load_lavdf(metadata_path)
         else:
             print(f"[WARN] No loader for dataset: {name}")
             continue
