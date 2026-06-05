@@ -17,3 +17,5 @@ python detectors/SADD/custom/run_all_datasets.py --dataset av1 --device gpu --ch
 
 
 python detectors/SADD/custom/run_all_datasets.py --dataset faceavceleb --device gpu --checkpoint C:\t309\detectors\SADD\.weights\model_best_epoch50.pth.tar
+
+python C:/t309/detectors/SADD/custom/run_all_datasets.py --dataset all --data_root C:/t309/dataSubset --results_file C:/t309/results/sadd/sadd.md --cache_root C:/t309/results/sadd/cache --checkpoint C:/t309/detectors/SADD/.weights/model_best_epoch50.pth.tar --device gpu --threshold_strategy fixed --threshold 0.5

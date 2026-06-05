@@ -1,4 +1,4 @@
-"""Run SADD evaluation across metadata-driven datasets and append summary metrics.
+r"""Run SADD evaluation across metadata-driven datasets and append summary metrics.
 
 This runner:
 - reads the metadata files in C:\t309\dataSubset
@@ -8,12 +8,11 @@ This runner:
 - supports --dry_run to limit each dataset to 10 videos
 - writes one markdown row per dataset to C:\t309\results\sadd\sadd.md
 
-FIXES APPLIED:
-  1. Score polarity: SADD distance is HIGH for fake, LOW for real.
-     y_score is now negated before thresholding so high score = real (pos_label=1).
-  2. Positive class: fake (label=0) is now the positive class for all
-     precision / recall / F1 / PR_AUC / FPR metrics, matching deepfake
-     detection convention.
+Evaluation convention:
+- fake = 1
+- real = 0
+- SADD mean audio-visual dissimilarity is used as the score, so higher means
+  more fake.
 """
 
 from __future__ import annotations
@@ -67,13 +66,15 @@ DEFAULT_CHECKPOINT = SADD_DIR / ".weights" / "model_best_epoch50.pth.tar"
 AUDIO_WAVEFORM_SAMPLES = 48000
 
 SUPPORTED_DATASETS = ("av1", "dfdc", "faceavceleb")
+REAL_LABEL = 0
+FAKE_LABEL = 1
 
 
 @dataclass(frozen=True)
 class MetadataItem:
     dataset: str
     video_id: str
-    label: int  # 0 = fake, 1 = real
+    label: int  # 1 = fake, 0 = real
     video_path: Path
     raw_entry: Dict[str, object]
 
@@ -83,7 +84,7 @@ class ChunkItem:
     dataset: str
     video_id: str
     chunk_id: str
-    label: int  # 0 = fake, 1 = real
+    label: int  # 1 = fake, 0 = real
     chunk_dir: Path
     audio_path: Path
 
@@ -177,9 +178,15 @@ def parse_args() -> argparse.Namespace:
     parser.set_defaults(keep_cache=True)
     parser.add_argument(
         "--threshold_strategy",
-        default="f1",
-        choices=("f1",),
-        help="Strategy used to select the evaluation threshold.",
+        default="fixed",
+        choices=("fixed", "f1"),
+        help="Use a fixed threshold for unbiased test metrics. f1 is rejected because it tunes on the evaluated set.",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="Decision threshold used when --threshold_strategy fixed.",
     )
     parser.add_argument(
         "--crop_face_av1_dfdc",
@@ -254,18 +261,26 @@ def resolve_video_path(dataset: str, data_root: Path, key: str, entry: Dict[str,
 def resolve_label(dataset: str, key: str, entry: Dict[str, object]) -> int:
     if dataset == "dfdc":
         label = str(entry.get("label", "")).upper()
-        return 0 if label == "FAKE" else 1
+        if label == "FAKE":
+            return FAKE_LABEL
+        if label == "REAL":
+            return REAL_LABEL
+        raise ValueError(f"Unknown DFDC label for {key}: {entry.get('label')!r}")
 
     if dataset == "av1":
-        modify_type = str(entry.get("modify_type", "real")).lower()
-        return 1 if modify_type == "real" else 0
+        modify_type = str(entry.get("modify_type", "")).lower()
+        if modify_type == "fake":
+            return FAKE_LABEL
+        if modify_type == "real":
+            return REAL_LABEL
+        raise ValueError(f"Unknown AV1 modify_type for {key}: {entry.get('modify_type')!r}")
 
     if dataset == "faceavceleb":
         entry_type = str(entry.get("type", "")).lower()
         method = str(entry.get("method", "")).lower()
         if entry_type == "realvideo-realaudio" or method == "real":
-            return 1
-        return 0
+            return REAL_LABEL
+        return FAKE_LABEL
 
     raise ValueError(f"Unsupported dataset: {dataset}")
 
@@ -298,7 +313,7 @@ def select_subset(items: Sequence[MetadataItem], dry_run: bool) -> List[Metadata
 
     selected: List[MetadataItem] = []
     per_label_target = 5
-    per_label_counts = {0: 0, 1: 0}
+    per_label_counts = {REAL_LABEL: 0, FAKE_LABEL: 0}
 
     for item in items:
         if per_label_counts[item.label] < per_label_target:
@@ -333,7 +348,7 @@ def is_missing_audio_error(message: str) -> bool:
 def preprocess_item(item: MetadataItem, dataset_cache_root: Path, crop_face: bool) -> None:
     run_pipeline_module = load_run_pipeline_module()
 
-    label_name = "fake" if item.label == 0 else "real"
+    label_name = label_to_name(item.label)
     done_marker = dataset_cache_root / "pytmp" / label_name / item.video_id / ".sadd_done"
     if done_marker.exists():
         return
@@ -682,7 +697,7 @@ def build_model(args: argparse.Namespace, device: torch.device) -> torch.nn.Modu
 def discover_chunk_items(dataset_cache_root: Path, selected_video_ids: Iterable[str]) -> List[ChunkItem]:
     selected_set = set(selected_video_ids)
     chunk_items: List[ChunkItem] = []
-    for label_name, label_value in (("fake", 0), ("real", 1)):
+    for label_name, label_value in (("fake", FAKE_LABEL), ("real", REAL_LABEL)):
         label_root = dataset_cache_root / "pytmp" / label_name
         if not label_root.exists():
             continue
@@ -719,6 +734,7 @@ def evaluate_dataset(
     if not items:
         raise RuntimeError(f"No metadata items found for dataset {dataset}")
 
+    selected_counts = count_items_by_label(items)
     crop_face = choose_crop_face(dataset, args)
     for item in items:
         preprocess_item(item, dataset_cache_root, crop_face=crop_face)
@@ -745,12 +761,13 @@ def evaluate_dataset(
             video_batch = video_batch.to(device)
             audio_batch = audio_batch.to(device)
             target_batch = target_batch.to(device)
+            sadd_target_batch = 1 - target_batch
 
             vid_class, aud_class, loss1, vid_out, aud_out, mean_separation_loss, kl_loss = model(
                 video_batch,
                 audio_batch,
                 0.99,
-                target_batch,
+                sadd_target_batch,
                 calc_mean_separation_loss=False,
                 calc_kl_loss=False,
             )
@@ -777,22 +794,32 @@ def evaluate_dataset(
 
     ordered_video_ids = sorted(video_scores)
     y_true = np.array([video_target[video_id] for video_id in ordered_video_ids], dtype=int)
-
-    # --- FIX 1: Score polarity ---
-    # PairwiseDistance is HIGH for fake (audio-visual mismatch) and LOW for real
-    # (audio-visual match). Negate so that a HIGH score means real (pos_label=1),
-    # which is what the threshold logic and ROC functions expect.
-    y_score = -np.array([video_scores[video_id] for video_id in ordered_video_ids], dtype=float)
-
-    threshold = choose_threshold(y_true, y_score, strategy=args.threshold_strategy)
+    y_score = np.array([video_scores[video_id] for video_id in ordered_video_ids], dtype=float)
+    threshold = resolve_threshold(
+        strategy=args.threshold_strategy,
+        fixed_threshold=args.threshold,
+    )
     y_pred = (y_score >= threshold).astype(int)
 
+    evaluated_counts = count_labels(y_true)
+    missing_skipped_counts = {
+        label: selected_counts[label] - evaluated_counts[label]
+        for label in (REAL_LABEL, FAKE_LABEL)
+    }
+    log_dataset_counts(
+        dataset=dataset,
+        selected_counts=selected_counts,
+        evaluated_counts=evaluated_counts,
+        missing_skipped_counts=missing_skipped_counts,
+        chunk_count=len(chunk_items),
+    )
     metrics = compute_metrics(y_true, y_score, y_pred)
     metrics.update(
         {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "dataset": dataset,
-            "samples": int(len(y_true)),
+            "videos": int(len(y_true)),
+            "chunks": int(len(chunk_items)),
             "threshold": float(threshold),
             "threshold_strategy": args.threshold_strategy,
         }
@@ -802,61 +829,38 @@ def evaluate_dataset(
     return metrics
 
 
-def choose_threshold(y_true: np.ndarray, y_score: np.ndarray, strategy: str) -> float:
-    if strategy != "f1":
-        raise ValueError(f"Unsupported threshold strategy: {strategy}")
-
-    thresholds = np.unique(y_score)
-    thresholds.sort()
-
-    best_threshold = float(thresholds[0])
-    best_f1 = -1.0
-    for threshold in thresholds:
-        predictions = (y_score >= threshold).astype(int)
-        # --- FIX 2: fake (label=0) is the positive class for deepfake detection ---
-        score = f1_score(y_true, predictions, zero_division=0, pos_label=0)
-        if score > best_f1:
-            best_f1 = float(score)
-            best_threshold = float(threshold)
-
-    return best_threshold
+def resolve_threshold(strategy: str, fixed_threshold: float) -> float:
+    if strategy == "fixed":
+        return float(fixed_threshold)
+    if strategy == "f1":
+        raise ValueError(
+            "threshold_strategy=f1 tunes on evaluation labels and produces biased metrics. "
+            "Use --threshold_strategy fixed with a threshold chosen before evaluation."
+        )
+    raise ValueError(f"Unsupported threshold strategy: {strategy}")
 
 
 def compute_metrics(y_true: np.ndarray, y_score: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
-    # ROC_AUC: binary AUC is symmetric between classes, so no pos_label needed here.
-    # After score negation, roc_auc_score correctly reflects discriminative power.
+    has_both_classes = len(np.unique(y_true)) > 1
     try:
-        roc_auc = float(roc_auc_score(y_true, y_score))
+        roc_auc = float(roc_auc_score(y_true, y_score)) if has_both_classes else float("nan")
     except ValueError:
         roc_auc = float("nan")
 
-    # --- FIX 2 (continued): PR_AUC for the fake class ---
-    # y_score was negated (high = real). To get PR_AUC for fake detection we pass
-    # -y_score (= original distance, high = fake) with pos_label=0.
     try:
-        pr_auc = float(average_precision_score(y_true, -y_score, pos_label=0))
+        pr_auc = float(average_precision_score(y_true, y_score)) if has_both_classes else float("nan")
     except ValueError:
         pr_auc = float("nan")
 
     accuracy = float(accuracy_score(y_true, y_pred))
+    precision = float(precision_score(y_true, y_pred, zero_division=0))
+    recall = float(recall_score(y_true, y_pred, zero_division=0))
+    f1 = float(f1_score(y_true, y_pred, zero_division=0))
 
-    # --- FIX 2 (continued): precision / recall / F1 for fake as positive class ---
-    precision = float(precision_score(y_true, y_pred, zero_division=0, pos_label=0))
-    recall    = float(recall_score(y_true, y_pred, zero_division=0, pos_label=0))
-    f1        = float(f1_score(y_true, y_pred, zero_division=0, pos_label=0))
-
-    # confusion_matrix with labels=[0,1] ravel() gives (TN, FP, FN, TP) relative
-    # to pos_label=1 (real).  For fake as positive:
-    #   TP_fake = TN_sklearn  (fake correctly called fake)
-    #   FP_fake = FN_sklearn  (real incorrectly called fake)
-    #   TN_fake = TP_sklearn  (real correctly called real)
-    #   FN_fake = FP_sklearn  (fake incorrectly called real)
-    # FPR = FP_fake / (FP_fake + TN_fake) = reals called fake / total reals
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
-    # --- FIX 2 (continued): FPR for fake detection ---
-    fpr = float(fn / (fn + tp)) if (fn + tp) else float("nan")
+    fpr = float(fp / (fp + tn)) if (fp + tn) else float("nan")
 
-    eer = calculate_eer(y_true, y_score)
+    eer = calculate_eer(y_true, y_score) if has_both_classes else float("nan")
 
     return {
         "accuracy": accuracy,
@@ -871,10 +875,48 @@ def compute_metrics(y_true: np.ndarray, y_score: np.ndarray, y_pred: np.ndarray)
 
 
 def calculate_eer(y_true: np.ndarray, y_score: np.ndarray) -> float:
-    fpr_values, tpr_values, _ = roc_curve(y_true, y_score, pos_label=1)
+    fpr_values, tpr_values, _ = roc_curve(y_true, y_score, pos_label=FAKE_LABEL)
     fnr_values = 1.0 - tpr_values
     index = int(np.nanargmin(np.abs(fpr_values - fnr_values)))
     return float((fpr_values[index] + fnr_values[index]) / 2.0)
+
+
+def label_to_name(label: int) -> str:
+    if label == FAKE_LABEL:
+        return "fake"
+    if label == REAL_LABEL:
+        return "real"
+    raise ValueError(f"Unknown binary label: {label!r}")
+
+
+def count_items_by_label(items: Sequence[MetadataItem]) -> Dict[int, int]:
+    counts = {REAL_LABEL: 0, FAKE_LABEL: 0}
+    for item in items:
+        counts[item.label] += 1
+    return counts
+
+
+def count_labels(labels: np.ndarray) -> Dict[int, int]:
+    return {
+        REAL_LABEL: int(np.sum(labels == REAL_LABEL)),
+        FAKE_LABEL: int(np.sum(labels == FAKE_LABEL)),
+    }
+
+
+def log_dataset_counts(
+    dataset: str,
+    selected_counts: Dict[int, int],
+    evaluated_counts: Dict[int, int],
+    missing_skipped_counts: Dict[int, int],
+    chunk_count: int,
+) -> None:
+    print(
+        f"{dataset} counts: "
+        f"selected real={selected_counts[REAL_LABEL]} fake={selected_counts[FAKE_LABEL]}; "
+        f"evaluated videos real={evaluated_counts[REAL_LABEL]} fake={evaluated_counts[FAKE_LABEL]}; "
+        f"missing/skipped real={missing_skipped_counts[REAL_LABEL]} fake={missing_skipped_counts[FAKE_LABEL]}; "
+        f"evaluated chunks={chunk_count}"
+    )
 
 
 def save_dataset_cache_index(
@@ -914,13 +956,13 @@ def append_results_row(results_file: Path, metrics: Dict[str, object]) -> None:
     results_file.parent.mkdir(parents=True, exist_ok=True)
     if not results_file.exists():
         results_file.write_text(
-            "| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
+            "| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
             encoding="utf-8",
         )
 
     row = (
-        f"| {metrics['timestamp']} | {metrics['dataset']} | {metrics['samples']} | "
+        f"| {metrics['timestamp']} | {metrics['dataset']} | {metrics['videos']} | {metrics['chunks']} | "
         f"{metrics['threshold']:.6f} | {metrics['threshold_strategy']} | "
         f"{metrics['accuracy']:.6f} | {metrics['precision']:.6f} | {metrics['recall']:.6f} | "
         f"{metrics['f1']:.6f} | {metrics['roc_auc']:.6f} | {metrics['pr_auc']:.6f} | "
@@ -942,6 +984,11 @@ def cleanup_cache(dataset_cache_root: Path) -> None:
 
 def run() -> None:
     args = parse_args()
+    if args.threshold_strategy == "f1":
+        raise SystemExit(
+            "--threshold_strategy f1 tunes on the evaluated labels and produces biased metrics; "
+            "use --threshold_strategy fixed with a preselected --threshold."
+        )
     datasets = list(SUPPORTED_DATASETS if args.dataset == "all" else [args.dataset])
     device = torch.device("cuda" if args.device == "gpu" and torch.cuda.is_available() else "cpu")
 
@@ -954,7 +1001,7 @@ def run() -> None:
         rows.append(metrics)
         append_results_row(Path(args.results_file), metrics)
         print(
-            f"{dataset}: samples={metrics['samples']} threshold={metrics['threshold']:.6f} "
+            f"{dataset}: videos={metrics['videos']} chunks={metrics['chunks']} threshold={metrics['threshold']:.6f} "
             f"accuracy={metrics['accuracy']:.4f} f1={metrics['f1']:.4f} roc_auc={metrics['roc_auc']:.4f}"
         )
 
