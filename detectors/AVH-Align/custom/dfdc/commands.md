@@ -24,3 +24,5 @@ python .\custom\dfdc\preprocess.py --auto_download_assets --base_dataset_folder 
 new
 python custom/dfdc/preprocess.py --auto_download_assets --base_dataset_folder "C:\t309\dataSubset" --preprocessed_root "C:\t309\results\avh_aligned\preprocessed" --features_root "C:\t309\results\avh_aligned\features" --results_file "C:\t309\results\avh_aligned\result.md" --max_workers 16
 ```
+
+python detectors/AVH-Align/custom/dfdc/preprocess.py --datasets av1,dfdc,faceavceleb --threshold_strategy fixed --threshold 0.5

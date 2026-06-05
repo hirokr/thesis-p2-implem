@@ -1,4 +1,5 @@
 import argparse
+import importlib
 import json
 import os
 import shutil
@@ -27,32 +28,11 @@ for path in (AVH_HUBERT_ROOT / "avhubert", AVH_HUBERT_ROOT / "fairseq", PROJECT_
 	if path_str not in sys.path:
 		sys.path.insert(0, path_str)
 
-try:
-	from ...av_hubert.avhubert.preparation.align_mouth import (
-		landmarks_interpolate,
-		crop_patch,
-		write_video_ffmpeg,
-	)
-except Exception:
-	try:
-		from avhubert.preparation.align_mouth import (
-			landmarks_interpolate,
-			crop_patch,
-			write_video_ffmpeg,
-		)
-	except Exception:
-		import importlib.util
-
-		align_mouth_path = AVH_HUBERT_ROOT / "avhubert" / "preparation" / "align_mouth.py"
-		spec = importlib.util.spec_from_file_location("avh_align_mouth", align_mouth_path)
-		module = importlib.util.module_from_spec(spec)
-		spec.loader.exec_module(module)
-		landmarks_interpolate = module.landmarks_interpolate
-		crop_patch = module.crop_patch
-		write_video_ffmpeg = module.write_video_ffmpeg
-
-import deepfake_feature_extraction as feature_extraction
-import eval as eval_runner
+landmarks_interpolate = None
+crop_patch = None
+write_video_ffmpeg = None
+feature_extraction = None
+eval_runner = None
 
 
 base_dataset_folder = r"C:\t309\dataSubset"
@@ -74,6 +54,52 @@ def _load_json(path):
 		return json.load(handle)
 
 
+def _load_align_mouth_helpers():
+	global landmarks_interpolate, crop_patch, write_video_ffmpeg
+	if landmarks_interpolate is not None and crop_patch is not None and write_video_ffmpeg is not None:
+		return
+	try:
+		from ...av_hubert.avhubert.preparation.align_mouth import (
+			landmarks_interpolate as loaded_landmarks_interpolate,
+			crop_patch as loaded_crop_patch,
+			write_video_ffmpeg as loaded_write_video_ffmpeg,
+		)
+	except Exception:
+		try:
+			from avhubert.preparation.align_mouth import (
+				landmarks_interpolate as loaded_landmarks_interpolate,
+				crop_patch as loaded_crop_patch,
+				write_video_ffmpeg as loaded_write_video_ffmpeg,
+			)
+		except Exception:
+			align_mouth_path = AVH_HUBERT_ROOT / "avhubert" / "preparation" / "align_mouth.py"
+			if not align_mouth_path.exists():
+				raise FileNotFoundError(f"AV-HuBERT align_mouth.py not found: {align_mouth_path}")
+			spec = importlib.util.spec_from_file_location("avh_align_mouth", align_mouth_path)
+			module = importlib.util.module_from_spec(spec)
+			spec.loader.exec_module(module)
+			loaded_landmarks_interpolate = module.landmarks_interpolate
+			loaded_crop_patch = module.crop_patch
+			loaded_write_video_ffmpeg = module.write_video_ffmpeg
+	landmarks_interpolate = loaded_landmarks_interpolate
+	crop_patch = loaded_crop_patch
+	write_video_ffmpeg = loaded_write_video_ffmpeg
+
+
+def _load_feature_extraction():
+	global feature_extraction
+	if feature_extraction is None:
+		feature_extraction = importlib.import_module("deepfake_feature_extraction")
+	return feature_extraction
+
+
+def _load_eval_runner():
+	global eval_runner
+	if eval_runner is None:
+		eval_runner = importlib.import_module("eval")
+	return eval_runner
+
+
 def _normalize_label(label):
 	if isinstance(label, str):
 		label_upper = label.strip().upper()
@@ -86,6 +112,30 @@ def _normalize_label(label):
 	if isinstance(label, (int, float, np.integer, np.floating)):
 		return int(label > 0)
 	return int(bool(label))
+
+
+def _label_from_av1(row):
+	modify_type = str(row.get("modify_type", "")).strip().lower()
+	if modify_type == "real":
+		return 0
+	if modify_type == "fake":
+		return 1
+	raise ValueError(f"Unknown av1 modify_type: {row.get('modify_type')!r}")
+
+
+def _label_from_dfdc(info):
+	label = str(info.get("label", "")).strip().upper()
+	if label == "REAL":
+		return 0
+	if label == "FAKE":
+		return 1
+	raise ValueError(f"Unknown DFDC label: {info.get('label')!r}")
+
+
+def _label_from_faceavceleb(row):
+	method = str(row.get("method", "")).strip().lower()
+	category = str(row.get("type", "")).strip()
+	return 0 if method == "real" or category == "RealVideo-RealAudio" else 1
 
 
 def _guess_common_root(paths):
@@ -278,6 +328,7 @@ def _preprocess_video(
 	ffmpeg_path,
 	failure_log,
 ):
+	_load_align_mouth_helpers()
 	import cv2
 	import dlib
 	import skvideo.io
@@ -415,8 +466,7 @@ def _load_av1m(metadata_path, split_filter=None):
 		video_path = row.get("file")
 		if not video_path:
 			continue
-		modify_type = row.get("modify_type", "")
-		label = 0 if modify_type == "real" else 1
+		label = _label_from_av1(row)
 		rel_path = os.path.relpath(video_path, root) if root else os.path.basename(video_path)
 		items.append({"video_path": video_path, "label": label, "split": split, "rel_path": rel_path})
 
@@ -433,8 +483,7 @@ def _load_fakeavceleb(metadata_path, split_filter=None):
 		video_path = row.get("file")
 		if not video_path:
 			continue
-		category = row.get("type", "")
-		label = 0 if category == "RealVideo-RealAudio" else 1
+		label = _label_from_faceavceleb(row)
 		rel_path = os.path.relpath(video_path, root) if root else os.path.basename(video_path)
 		items.append({"video_path": video_path, "label": label, "split": None, "rel_path": rel_path})
 
@@ -483,35 +532,84 @@ def _load_dfdc(metadata_path, dataset_root, split_filter=None):
 		if split_filter and split != split_filter:
 			continue
 		video_path = os.path.join(dataset_root, rel_path)
-		label = _normalize_label(info.get("label"))
+		label = _label_from_dfdc(info)
 		items.append({"video_path": video_path, "label": label, "split": split, "rel_path": rel_path})
 
 	return items, dataset_root
 
 
+def _count_by_label(items):
+	counts = {0: 0, 1: 0}
+	for item in items:
+		counts[int(item["label"])] += 1
+	return counts
+
+
+def _count_labels(labels):
+	labels = np.asarray(labels, dtype=np.int32)
+	return {0: int(np.sum(labels == 0)), 1: int(np.sum(labels == 1))}
+
+
+def _log_label_counts(dataset_name, selected_counts, staged_counts, evaluated_counts):
+	missing_counts = {
+		0: selected_counts[0] - evaluated_counts[0],
+		1: selected_counts[1] - evaluated_counts[1],
+	}
+	print(
+		f"[COUNTS] {dataset_name}: "
+		f"selected real={selected_counts[0]} fake={selected_counts[1]}; "
+		f"staged real={staged_counts[0]} fake={staged_counts[1]}; "
+		f"evaluated real={evaluated_counts[0]} fake={evaluated_counts[1]}; "
+		f"missing/skipped real={missing_counts[0]} fake={missing_counts[1]}"
+	)
+
+
+def _has_preprocessed_item(item, preproc_root):
+	rel_path = item["rel_path"]
+	base_dir = os.path.join(preproc_root, os.path.dirname(rel_path))
+	name_root = os.path.splitext(os.path.basename(rel_path))[0]
+	return (
+		os.path.exists(os.path.join(base_dir, name_root + "_roi.mp4"))
+		and os.path.exists(os.path.join(base_dir, name_root + ".wav"))
+	)
+
+
 def _select_threshold(scores, labels, strategy, fixed_threshold):
-	if len(np.unique(labels)) < 2:
-		return fixed_threshold
 	if strategy == "fixed":
-		return fixed_threshold
-	fpr, tpr, thresholds = roc_curve(labels, scores)
-	if strategy == "youden":
-		j_scores = tpr - fpr
-		return thresholds[int(np.argmax(j_scores))]
+		return float(fixed_threshold)
 	if strategy == "f1":
-		best_f1 = -1.0
-		best_threshold = thresholds[0]
-		for threshold in thresholds:
-			preds = (scores >= threshold).astype(int)
-			value = f1_score(labels, preds, zero_division=0)
-			if value > best_f1:
-				best_f1 = value
-				best_threshold = threshold
-		return best_threshold
-	return fixed_threshold
+		raise ValueError(
+			"threshold_strategy=f1 tunes on the evaluated labels and produces biased metrics. "
+			"Use --threshold_strategy fixed with a threshold chosen before evaluation."
+		)
+	if strategy == "youden":
+		raise ValueError(
+			"threshold_strategy=youden tunes on the evaluated labels and produces biased metrics. "
+			"Use --threshold_strategy fixed with a threshold chosen before evaluation."
+		)
+	raise ValueError(f"Unknown threshold strategy: {strategy}")
+
+
+def _compute_eer(labels, scores):
+	fpr, tpr, _ = roc_curve(labels, scores)
+	fnr = 1 - tpr
+	diff = fpr - fnr
+	exact = np.where(diff == 0)[0]
+	if len(exact) > 0:
+		return float(fpr[int(exact[0])])
+	crossing = np.where(diff[:-1] * diff[1:] < 0)[0]
+	if len(crossing) > 0:
+		idx = int(crossing[0])
+		x0, x1 = diff[idx], diff[idx + 1]
+		weight = -x0 / (x1 - x0)
+		return float(fpr[idx] + weight * (fpr[idx + 1] - fpr[idx]))
+	idx = int(np.nanargmin(np.abs(diff)))
+	return float((fpr[idx] + fnr[idx]) / 2)
 
 
 def _compute_metrics(scores, labels, threshold):
+	scores = np.asarray(scores, dtype=np.float64)
+	labels = np.asarray(labels, dtype=np.int32)
 	preds = (scores >= threshold).astype(int)
 
 	accuracy = accuracy_score(labels, preds)
@@ -532,11 +630,12 @@ def _compute_metrics(scores, labels, threshold):
 			pr_auc = average_precision_score(labels, scores)
 		except ValueError:
 			pr_auc = float("nan")
-		fpr, tpr, thresholds = roc_curve(labels, scores)
-		fnr = 1 - tpr
-		eer_index = int(np.nanargmin(np.abs(fnr - fpr)))
-		eer = float((fpr[eer_index] + fnr[eer_index]) / 2)
-		fpr_at_threshold = float(np.interp(threshold, thresholds[::-1], fpr[::-1]))
+		eer = _compute_eer(labels, scores)
+
+	tn = int(np.sum((labels == 0) & (preds == 0)))
+	fp = int(np.sum((labels == 0) & (preds == 1)))
+	if fp + tn > 0:
+		fpr_at_threshold = float(fp / (fp + tn))
 
 	return {
 		"Accuracy": accuracy,
@@ -657,6 +756,7 @@ def _preprocess_items(items, output_root, face_predictor_path, mean_face_path, f
 
 
 def _extract_features(items, preproc_root, feature_root, model, transform, trimmed):
+	feature_module = _load_feature_extraction()
 	for item in items:
 		rel_path = item["rel_path"]
 		base_dir = os.path.join(preproc_root, os.path.dirname(rel_path))
@@ -670,7 +770,7 @@ def _extract_features(items, preproc_root, feature_root, model, transform, trimm
 			continue
 
 		try:
-			feature_audio, feature_vid, feature_multimodal = feature_extraction.extract_features(
+			feature_audio, feature_vid, feature_multimodal = feature_module.extract_features(
 				model, mouth_roi_path, audio_path, transform, trimmed
 			)
 		except Exception as exc:
@@ -689,13 +789,14 @@ def _extract_features(items, preproc_root, feature_root, model, transform, trimm
 
 
 def _evaluate(items, feature_root, checkpoint_path, dataset_name, threshold_strategy, threshold_value):
+	eval_module = _load_eval_runner()
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	try:
 		fusion_model_weights = torch.load(checkpoint_path, map_location=device, weights_only=False)
 	except TypeError:
 		fusion_model_weights = torch.load(checkpoint_path, map_location=device)
 
-	fusion_model = eval_runner.FusionModel().to(device)
+	fusion_model = eval_module.FusionModel().to(device)
 	state_dict = fusion_model_weights.get("state_dict") if isinstance(fusion_model_weights, dict) else None
 	if state_dict is None:
 		state_dict = fusion_model_weights
@@ -710,24 +811,26 @@ def _evaluate(items, feature_root, checkpoint_path, dataset_name, threshold_stra
 			print(f"[WARN] Missing features for {item['video_path']}")
 			continue
 		data = np.load(feature_path, allow_pickle=True)
-		score = eval_runner.process_video(data, fusion_model, device)
+		score = eval_module.process_video(data, fusion_model, device)
+		score = float(score.detach().cpu().item() if torch.is_tensor(score) else score)
 		outputs.append(score)
 		ground_truths.append(item["label"])
 		print(f"[DONE] Evaluated: {item['video_path']} | Score: {score:.4f}")
 
-	outcdputs = np.array(outputs, dtype=np.float64)
+	outputs = np.array(outputs, dtype=np.float64)
 	ground_truths = np.array(ground_truths, dtype=np.int32)
 	if len(outputs) == 0:
 		raise RuntimeError(f"No features available for evaluation on {dataset_name}.")
 
 	threshold = _select_threshold(outputs, ground_truths, threshold_strategy, threshold_value)
 	metrics = _compute_metrics(outputs, ground_truths, threshold)
-	return metrics, threshold, len(ground_truths)
+	return metrics, threshold, len(ground_truths), _count_labels(ground_truths)
 
 
 def _run_dataset(dataset_name, items, dataset_root, args, model, transform):
 	preproc_root = os.path.join(args.preprocessed_root, dataset_name)
 	feature_root = os.path.join(args.features_root, dataset_name)
+	selected_counts = _count_by_label(items)
 
 	_preprocess_items(
 		items,
@@ -738,9 +841,11 @@ def _run_dataset(dataset_name, items, dataset_root, args, model, transform):
 		args.failure_log,
 		args.max_workers,
 	)
+	staged_items = [item for item in items if _has_preprocessed_item(item, preproc_root)]
+	staged_counts = _count_by_label(staged_items)
 	_extract_features(items, preproc_root, feature_root, model, transform, args.trimmed)
 	try:
-		metrics, threshold, total_count = _evaluate(
+		metrics, threshold, total_count, evaluated_counts = _evaluate(
 			items,
 			feature_root,
 			args.checkpoint_path,
@@ -748,9 +853,25 @@ def _run_dataset(dataset_name, items, dataset_root, args, model, transform):
 			args.threshold_strategy,
 			args.threshold,
 		)
+		_log_label_counts(dataset_name, selected_counts, staged_counts, evaluated_counts)
 		_append_results(args.results_file, dataset_name, metrics, threshold, total_count, args.threshold_strategy)
-	except RuntimeError as exc:
+	except (RuntimeError, ValueError) as exc:
+		_log_label_counts(dataset_name, selected_counts, staged_counts, {0: 0, 1: 0})
 		print(f"[WARN] Skipping evaluation for {dataset_name}: {exc}")
+
+
+def _load_dataset_items(dataset_name, metadata_path, args):
+	if dataset_name == "av1":
+		return _load_av1m(metadata_path, args.split)[0]
+	if dataset_name == "dfdc":
+		return _load_dfdc(metadata_path, args.dfdc_root, args.split)[0]
+	if dataset_name == "faceavceleb":
+		return _load_fakeavceleb(metadata_path, args.split)[0]
+	if dataset_name == "faceforensics":
+		return _load_faceforensics(metadata_path, args.split)[0]
+	if dataset_name == "lavdf":
+		return _load_lavdf(metadata_path, args.split)[0]
+	return []
 
 
 def main():
@@ -778,11 +899,18 @@ def main():
 		help="Path to log preprocessing failures",
 	)
 	parser.add_argument("--trimmed", action="store_true", help="Trim audio to starting silence")
-	parser.add_argument("--threshold_strategy", choices=["fixed", "youden", "f1"], default="f1", help="Threshold strategy")
+	parser.add_argument(
+		"--threshold_strategy",
+		choices=["fixed", "youden", "f1"],
+		default="fixed",
+		help="Use fixed for unbiased test metrics. f1/youden are rejected because they tune on evaluated labels.",
+	)
 	parser.add_argument("--threshold", type=float, default=0.5, help="Threshold for fixed strategy")
 	parser.add_argument("--auto_download_assets", action="store_true", help="Download missing landmark/mean-face assets")
 	parser.add_argument("--dry_run", action="store_true", help="Validate inputs and exit without processing")
+	parser.add_argument("--metadata_label_count_check", action="store_true", help="Print metadata label counts and exit")
 	parser.add_argument("--max_items", type=int, default=None, help="Limit items per dataset for debugging")
+	parser.add_argument("--skip_completed", action="store_true", help="Skip datasets already present in the results markdown")
 	args = parser.parse_args()
 
 	args.ffmpeg_path = _resolve_ffmpeg_path(args.ffmpeg_path)
@@ -811,6 +939,28 @@ def main():
 
 	selected = [name.strip() for name in args.datasets.split(",") if name.strip()]
 
+	if args.threshold_strategy in ("f1", "youden"):
+		raise ValueError(
+			f"--threshold_strategy {args.threshold_strategy} tunes on evaluation labels and produces biased metrics; "
+			"use --threshold_strategy fixed with a preselected --threshold."
+		)
+
+	if args.metadata_label_count_check:
+		for dataset_name in selected:
+			if dataset_name not in dataset_map:
+				print(f"[WARN] Unknown dataset '{dataset_name}', skipping.")
+				continue
+			metadata_path = dataset_map[dataset_name]
+			if not os.path.exists(metadata_path):
+				print(f"[WARN] Metadata not found for '{dataset_name}': {metadata_path}")
+				continue
+			items = _load_dataset_items(dataset_name, metadata_path, args)
+			if args.max_items:
+				items = items[: args.max_items]
+			counts = _count_by_label(items)
+			print(f"[METADATA] {dataset_name}: total={len(items)} real={counts[0]} fake={counts[1]}")
+		return
+
 	missing = _collect_missing_inputs(args, dataset_map)
 	if args.dry_run:
 		if missing:
@@ -827,9 +977,10 @@ def main():
 
 	print(f"CUDA available: {torch.cuda.is_available()}")
 
-	model, task = feature_extraction.load_model(args.avhubert_ckpt)
-	transform = feature_extraction.load_transforms(task)
-	completed = {name.lower() for name in _load_completed_datasets(args.results_file)}
+	feature_module = _load_feature_extraction()
+	model, task = feature_module.load_model(args.avhubert_ckpt)
+	transform = feature_module.load_transforms(task)
+	completed = {name.lower() for name in _load_completed_datasets(args.results_file)} if args.skip_completed else set()
 
 	for dataset_name in selected:
 		if dataset_name.lower() in completed:
@@ -843,18 +994,7 @@ def main():
 			print(f"[WARN] Metadata not found for '{dataset_name}': {metadata_path}")
 			continue
 
-		if dataset_name == "av1":
-			items, _ = _load_av1m(metadata_path, args.split)
-		elif dataset_name == "dfdc":
-			items, _ = _load_dfdc(metadata_path, args.dfdc_root, args.split)
-		elif dataset_name == "faceavceleb":
-			items, _ = _load_fakeavceleb(metadata_path, args.split)
-		elif dataset_name == "faceforensics":
-			items, _ = _load_faceforensics(metadata_path, args.split)
-		elif dataset_name == "lavdf":
-			items, _ = _load_lavdf(metadata_path, args.split)
-		else:
-			items = []
+		items = _load_dataset_items(dataset_name, metadata_path, args)
 
 		if not items:
 			print(f"[WARN] No items for dataset '{dataset_name}'.")
