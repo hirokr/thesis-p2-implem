@@ -1,4 +1,4 @@
-| Method      | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |
+| Model       | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |
 | ----------- | ----------- | -------------: | --------: | ----------------- | -------: | --------: | -----: | -----: | ------: | -----: | -----: | -----: |
 | SADD        | av1         |           1000 |    0.5000 | fixed-target      |   0.7544 |    0.7431 | 0.7728 | 0.7576 |  0.8096 | 0.8004 | 0.2052 | 0.2160 |
 | SADD        | dfdc        |           1000 |    0.5000 | fixed-target      |   0.6992 |    0.6900 | 0.7176 | 0.7035 |  0.7636 | 0.7452 | 0.2592 | 0.2808 |

@@ -1,4 +1,4 @@
-| Method      | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |
+| Model       | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |
 | ----------- | ----------- | -------------: | --------: | ----------------- | -------: | --------: | -----: | -----: | ------: | -----: | -----: | -----: |
 | FGI         | av1         |           1000 |    0.5000 | fixed-target      |   0.7176 |    0.7077 | 0.7360 | 0.7216 |  0.7820 | 0.7636 | 0.2376 | 0.2592 |
 | FGI         | dfdc        |           1000 |    0.5000 | fixed-target      |   0.6624 |    0.6546 | 0.6808 | 0.6675 |  0.7268 | 0.7084 | 0.3024 | 0.3240 |
