@@ -651,15 +651,24 @@ def _compute_metrics(scores, labels, threshold):
 
 def _append_results(path, dataset_name, metrics, threshold, total_count, threshold_strategy):
 	_ensure_dir(os.path.dirname(path))
-	header = "| Timestamp | Dataset | Samples | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
-	divider = "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n"
+	header = (
+		"| Model       | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |\n"
+	)
+	divider = (
+		"| ----------- | ----------- | -------------: | --------: | ----------------- | -------: | --------: | -----: | -----: | ------: | -----: | -----: | -----: |\n"
+	)
 	row = (
-		f"| {datetime.now().isoformat(timespec='seconds')} | {dataset_name} | {total_count} | {threshold:.6f} | {threshold_strategy} "
+		f"| AVH-Align | {dataset_name} | {total_count} | {threshold:.6f} | {threshold_strategy} "
 		f"| {metrics['Accuracy']:.6f} | {metrics['Precision']:.6f} | {metrics['Recall']:.6f} | {metrics['F1']:.6f} "
 		f"| {metrics['ROC_AUC']:.6f} | {metrics['PR_AUC']:.6f} | {metrics['EER']:.6f} | {metrics['FPR']:.6f} |\n"
 	)
 
-	if not os.path.exists(path):
+	write_header = not os.path.exists(path) or os.path.getsize(path) == 0
+	if not write_header:
+		with open(path, "r", encoding="utf-8") as handle:
+			write_header = handle.readline() != header
+
+	if write_header:
 		with open(path, "w", encoding="utf-8") as handle:
 			handle.write(header)
 			handle.write(divider)
@@ -681,7 +690,7 @@ def _load_completed_datasets(results_path):
 				line = line.strip()
 				if not line.startswith("|"):
 					continue
-				if line.startswith("| Timestamp") or line.startswith("| ---"):
+				if line.startswith("| Model") or line.startswith("| Timestamp") or line.startswith("| ---"):
 					continue
 				parts = [part.strip() for part in line.strip("|").split("|")]
 				if len(parts) < 2:

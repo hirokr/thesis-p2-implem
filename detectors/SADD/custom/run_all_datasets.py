@@ -954,15 +954,25 @@ def save_dataset_cache_index(
 
 def append_results_row(results_file: Path, metrics: Dict[str, object]) -> None:
     results_file.parent.mkdir(parents=True, exist_ok=True)
-    if not results_file.exists():
+    header = (
+        "| Model       | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |\n"
+    )
+    separator = (
+        "| ----------- | ----------- | -------------: | --------: | ----------------- | -------: | --------: | -----: | -----: | ------: | -----: | -----: | -----: |\n"
+    )
+    needs_header = not results_file.exists() or results_file.stat().st_size == 0
+    if not needs_header:
+        with results_file.open("r", encoding="utf-8") as handle:
+            needs_header = handle.readline() != header
+
+    if needs_header:
         results_file.write_text(
-            "| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n"
-            "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n",
+            header + separator,
             encoding="utf-8",
         )
 
     row = (
-        f"| {metrics['timestamp']} | {metrics['dataset']} | {metrics['videos']} | {metrics['chunks']} | "
+        f"| SADD | {metrics['dataset']} | {metrics['videos']} | "
         f"{metrics['threshold']:.6f} | {metrics['threshold_strategy']} | "
         f"{metrics['accuracy']:.6f} | {metrics['precision']:.6f} | {metrics['recall']:.6f} | "
         f"{metrics['f1']:.6f} | {metrics['roc_auc']:.6f} | {metrics['pr_auc']:.6f} | "

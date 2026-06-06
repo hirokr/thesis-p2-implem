@@ -591,19 +591,19 @@ def run_inference_and_collect(out_dir, dataset_name, checkpoint, device='cuda'):
 
 
 def append_results_markdown(md_path, row):
-    header = '| Timestamp | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Aggregation | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |\n'
-    sep = '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n'
-    exists = os.path.exists(md_path)
-    needs_header = True
-    if exists and os.path.getsize(md_path) > 0:
-        with open(md_path, 'r') as f:
-            first_line = f.readline().strip()
-        needs_header = first_line != header.strip()
-    with open(md_path, 'a') as f:
+    header = '| Model       | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |\n'
+    sep = '| ----------- | ----------- | -------------: | --------: | ----------------- | -------: | --------: | -----: | -----: | ------: | -----: | -----: | -----: |\n'
+    needs_header = not os.path.exists(md_path) or os.path.getsize(md_path) == 0
+    if not needs_header:
+        with open(md_path, 'r', encoding='utf-8') as f:
+            needs_header = f.readline() != header
+
+    mode = 'w' if needs_header else 'a'
+    with open(md_path, mode, encoding='utf-8') as f:
         if needs_header:
             f.write(header)
             f.write(sep)
-        f.write(f"| {row['Timestamp']} | {row['Dataset']} | {row['Videos']} | {row['Chunks']} | {row['Threshold']:.4f} | {row['ThresholdStrategy']} | {row['Aggregation']} | {row['Accuracy']:.4f} | {row['Precision']:.4f} | {row['Recall']:.4f} | {row['F1']:.4f} | {row['ROC_AUC']:.4f} | {row['PR_AUC']:.4f} | {row['EER']:.4f} | {row['FPR']:.4f} |\n")
+        f.write(f"| FGI | {row['Dataset']} | {row['Videos']} | {row['Threshold']:.4f} | {row['ThresholdStrategy']} | {row['Accuracy']:.4f} | {row['Precision']:.4f} | {row['Recall']:.4f} | {row['F1']:.4f} | {row['ROC_AUC']:.4f} | {row['PR_AUC']:.4f} | {row['EER']:.4f} | {row['FPR']:.4f} |\n")
 
 
 def main():
