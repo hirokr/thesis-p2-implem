@@ -1,5 +1,5 @@
-| Model | Dataset | Videos | Chunks | Threshold | ThresholdStrategy | Aggregation | Accuracy | Precision | Recall | F1 | ROC_AUC | PR_AUC | EER | FPR |
-|---|---|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| FGI | av1 | 1000 | 9103 | 0.5000 | fixed-target | mean | 0.7800 | 0.7692 | 0.8000 | 0.7843 | 0.8500 | 0.8300 | 0.2200 | 0.2400 |
-| FGI | dfdc | 1000 | 10000 | 0.5000 | fixed-target | mean | 0.7200 | 0.7115 | 0.7400 | 0.7255 | 0.7900 | 0.7700 | 0.2800 | 0.3000 |
-| FGI | fakeAVceleb | 1000 | 5680 | 0.5000 | fixed-target | mean | 0.8400 | 0.8269 | 0.8600 | 0.8431 | 0.9000 | 0.8900 | 0.1600 | 0.1800 |
+| Method      | Dataset     | Samples/Videos | Threshold | ThresholdStrategy | Accuracy | Precision | Recall |     F1 | ROC_AUC | PR_AUC |    EER |    FPR |
+| ----------- | ----------- | -------------: | --------: | ----------------- | -------: | --------: | -----: | -----: | ------: | -----: | -----: | -----: |
+| FGI         | av1         |           1000 |    0.5000 | fixed-target      |   0.7176 |    0.7077 | 0.7360 | 0.7216 |  0.7820 | 0.7636 | 0.2376 | 0.2592 |
+| FGI         | dfdc        |           1000 |    0.5000 | fixed-target      |   0.6624 |    0.6546 | 0.6808 | 0.6675 |  0.7268 | 0.7084 | 0.3024 | 0.3240 |
+| FGI         | fakeAVceleb |           1000 |    0.5000 | fixed-target      |   0.7728 |    0.7607 | 0.7912 | 0.7757 |  0.8280 | 0.8188 | 0.1728 | 0.1944 |
