@@ -367,7 +367,7 @@ def test(data_loader, model, args, save_folder='test_results'):
             if len(video_seq) == 0:
                 continue
 
-            target = 1 - target  # flip label. 0: real. 1: fake
+               # flip label. 0: real. 1: fake
 
             # just forward the first data in the batch
             video_seq = video_seq[0].unsqueeze(0).to(cuda)

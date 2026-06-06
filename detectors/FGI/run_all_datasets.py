@@ -567,7 +567,7 @@ def run_inference_and_collect(out_dir, dataset_name, checkpoint, device='cuda'):
             if len(video_seq) == 0:
                 continue
             # flip label like training/test code
-            target = 1 - target
+             
 
             # use first sample in batch
             video = video_seq[0].unsqueeze(0).to(device)
