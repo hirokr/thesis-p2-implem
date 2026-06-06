@@ -11,4 +11,4 @@ conda run -n fgi python detectors/FGI/run_all_datasets.py --datasets dfdc --chec
 
 python detectors/FGI/run_all_datasets.py --datasets av1,dfdc,faceavceleb --threshold_strategy fixed --threshold 0.5
 
-python detectors/FGI/run_all_datasets.py --datasets av1 --threshold_strategy fixed --threshold 0.5
+python detectors/FGI/run_all_datasets.py --datasets dfdc --threshold_strategy fixed --threshold 0.5
